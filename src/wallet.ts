@@ -132,40 +132,16 @@ function isProgressStrictlyComplete(progress: unknown): boolean {
 export async function syncWallet(
   logger: Logger,
   wallet: WalletFacade,
-  timeout = 30_000,
+  timeout = 600_000,
 ): Promise<FacadeState> {
-  logger.info('Syncing wallet...');
-  let emissionCount = 0;
-  let lastState: FacadeState | null = null;
-
-  return Rx.firstValueFrom(
-    wallet.state().pipe(
-      Rx.tap((state: FacadeState) => {
-        emissionCount++;
-        lastState = state;
-      }),
-      // Accept when shielded + unshielded are complete, or after enough emissions
-      Rx.filter((state: FacadeState) =>
-        (isProgressStrictlyComplete(state.shielded.state.progress) &&
-         isProgressStrictlyComplete(state.unshielded.progress)) ||
-        emissionCount >= 50,
-      ),
-      Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions`)),
-      Rx.timeout({
-        each: timeout,
-        with: () =>
-          Rx.throwError(
-            () => new Error(`Wallet sync timeout after ${timeout}ms (${emissionCount} emissions received)`),
-          ),
-      }),
-      Rx.catchError((err) => {
-        if (lastState) {
-          logger.warn(`Wallet sync partial (${emissionCount} emissions) — proceeding anyway`);
-          return Rx.of(lastState);
-        }
-        logger.error(`Wallet sync error: ${err}`);
-        return Rx.throwError(() => err);
-      }),
-    ),
-  );
+  logger.info('Syncing wallet (full sync with 10min timeout)...');
+  const start = Date.now();
+  try {
+    const state = await wallet.waitForSyncedState();
+    logger.info(`Wallet sync complete in ${((Date.now() - start) / 1000).toFixed(1)}s`);
+    return state;
+  } catch (err) {
+    logger.error(`Wallet waitForSyncedState failed: ${err}`);
+    throw err;
+  }
 }
