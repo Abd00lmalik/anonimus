@@ -121,7 +121,7 @@ export class MidnightService {
       this.logger.info(`[MidnightService] Using existing contract: ${this.contractAddress}`);
     } else {
       // Retry contract deployment — DUST may take time to accrue after registration
-      const MAX_RETRIES = 30;
+      const MAX_RETRIES = 60;
       const RETRY_DELAY_MS = 60_000; // 1 minute
       let lastError: unknown;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
