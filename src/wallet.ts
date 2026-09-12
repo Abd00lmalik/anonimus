@@ -134,18 +134,29 @@ export async function syncWallet(
   wallet: WalletFacade,
   _timeout = 300_000,
 ): Promise<FacadeState> {
-  logger.info('Syncing wallet...');
+  logger.info('Syncing wallet (waiting for dust sub-wallet to catch up)...');
   let emissionCount = 0;
-  let lastState: FacadeState | null = null;
 
   return Rx.firstValueFrom(
     wallet.state().pipe(
       Rx.tap((state: FacadeState) => {
         emissionCount++;
-        lastState = state;
+        if (emissionCount % 100 === 0) {
+          const dustProgress = (state as any).dust?.state?.progress;
+          const dustApplied = dustProgress?.appliedIndex?.toString() ?? '?';
+          const dustHighest = dustProgress?.highestRelevantWalletIndex?.toString() ?? '?';
+          const dustComplete = dustProgress?.isStrictlyComplete?.() ?? false;
+          logger.info(`Wallet sync: ${emissionCount} emissions | dust: ${dustApplied}/${dustHighest} complete=${dustComplete}`);
+        }
       }),
-      Rx.filter(() => emissionCount >= 100),
-      Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions`)),
+      Rx.filter((state: FacadeState) => {
+        const dustProgress = (state as any).dust?.state?.progress;
+        if (!dustProgress || typeof dustProgress.isStrictlyComplete !== 'function') {
+          return false;
+        }
+        return dustProgress.isStrictlyComplete();
+      }),
+      Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions — dust sub-wallet fully synced`)),
     ),
   );
 }

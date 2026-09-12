@@ -63,7 +63,7 @@ export class MidnightService {
   private initialized = false;
   private initPromise: Promise<void> | null = null;
 
-  constructor(private readonly logger: { info: (...args: unknown[]) => void; error: (...args: unknown[]) => void }) {}
+  constructor(private readonly logger: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void; error: (...args: unknown[]) => void }) {}
 
   /**
    * Initialize the service: wallet → sync → providers → deploy → register verifier.
