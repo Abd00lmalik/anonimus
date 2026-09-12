@@ -132,16 +132,20 @@ function isProgressStrictlyComplete(progress: unknown): boolean {
 export async function syncWallet(
   logger: Logger,
   wallet: WalletFacade,
-  timeout = 600_000,
+  _timeout = 300_000,
 ): Promise<FacadeState> {
-  logger.info('Syncing wallet (full sync with 10min timeout)...');
-  const start = Date.now();
-  try {
-    const state = await wallet.waitForSyncedState();
-    logger.info(`Wallet sync complete in ${((Date.now() - start) / 1000).toFixed(1)}s`);
-    return state;
-  } catch (err) {
-    logger.error(`Wallet waitForSyncedState failed: ${err}`);
-    throw err;
-  }
+  logger.info('Syncing wallet...');
+  let emissionCount = 0;
+  let lastState: FacadeState | null = null;
+
+  return Rx.firstValueFrom(
+    wallet.state().pipe(
+      Rx.tap((state: FacadeState) => {
+        emissionCount++;
+        lastState = state;
+      }),
+      Rx.filter(() => emissionCount >= 100),
+      Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions`)),
+    ),
+  );
 }
