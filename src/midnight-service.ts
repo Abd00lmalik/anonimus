@@ -120,8 +120,28 @@ export class MidnightService {
       this.providers.privateStateProvider.setContractAddress(this.contractAddress);
       this.logger.info(`[MidnightService] Using existing contract: ${this.contractAddress}`);
     } else {
-      await this._deployContract();
-      this.logger.info(`[MidnightService] Contract deployed at: ${this.contractAddress}`);
+      // Retry contract deployment — DUST may take time to accrue after registration
+      const MAX_RETRIES = 30;
+      const RETRY_DELAY_MS = 60_000; // 1 minute
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          await this._deployContract();
+          this.logger.info(`[MidnightService] Contract deployed at: ${this.contractAddress}`);
+          break;
+        } catch (err: any) {
+          lastError = err;
+          if (err.message?.includes('InsufficientFunds') || err.message?.includes('could not balance dust')) {
+            this.logger.warn(`[MidnightService] No DUST yet (attempt ${attempt}/${MAX_RETRIES}). Retrying in ${RETRY_DELAY_MS / 1000}s...`);
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          } else {
+            throw err;
+          }
+        }
+      }
+      if (!this.contractAddress) {
+        throw lastError;
+      }
     }
 
     // Register test verifier (one-time)
