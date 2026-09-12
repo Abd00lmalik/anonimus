@@ -134,6 +134,9 @@ export class MidnightService {
           if (err.message?.includes('InsufficientFunds') || err.message?.includes('could not balance dust')) {
             this.logger.warn(`[MidnightService] No DUST yet (attempt ${attempt}/${MAX_RETRIES}). Retrying in ${RETRY_DELAY_MS / 1000}s...`);
             await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          } else if (err.message?.includes('170') || err.message?.includes('InvalidDustSpendProof')) {
+            this.logger.warn(`[MidnightService] DUST proof stale (attempt ${attempt}/${MAX_RETRIES}). Retrying in 10s...`);
+            await new Promise(r => setTimeout(r, 10_000));
           } else {
             throw err;
           }
@@ -166,27 +169,44 @@ export class MidnightService {
   // ── Internal operations ───────────────────────────────────────────
 
   private async _deployContract(): Promise<void> {
-    const adminSecretKey = crypto.getRandomValues(new Uint8Array(32));
-    const adminState: PohPrivateState = {
-      secretKey: adminSecretKey,
-      credentialSalt: new Uint8Array(32),
-      verifierSigningKey: 0n,
-      attestation: null,
-      attestedVerifierPk: null,
-      expiresAt: 0n,
-    };
+    const MAX_TX_RETRIES = 5;
+    let lastTxError: unknown;
 
-    const deployedResult = await (deployContract<Contract>)(this.providers, {
-      compiledContract: CompiledPohCoreContract,
-      privateStateId: 'poh-admin-state',
-      initialPrivateState: adminState,
-      args: [],
-    } as any);
-    this.contractAddress = deployedResult.deployTxData.public.contractAddress;
+    for (let txAttempt = 1; txAttempt <= MAX_TX_RETRIES; txAttempt++) {
+      try {
+        const adminSecretKey = crypto.getRandomValues(new Uint8Array(32));
+        const adminState: PohPrivateState = {
+          secretKey: adminSecretKey,
+          credentialSalt: new Uint8Array(32),
+          verifierSigningKey: 0n,
+          attestation: null,
+          attestedVerifierPk: null,
+          expiresAt: 0n,
+        };
 
-    // Persist admin state for subsequent admin operations
-    this.providers.privateStateProvider.setContractAddress(this.contractAddress);
-    await this.providers.privateStateProvider.set('poh-admin-state', adminState);
+        const deployedResult = await (deployContract<Contract>)(this.providers, {
+          compiledContract: CompiledPohCoreContract,
+          privateStateId: 'poh-admin-state',
+          initialPrivateState: adminState,
+          args: [],
+        } as any);
+        this.contractAddress = deployedResult.deployTxData.public.contractAddress;
+
+        // Persist admin state for subsequent admin operations
+        this.providers.privateStateProvider.setContractAddress(this.contractAddress);
+        await this.providers.privateStateProvider.set('poh-admin-state', adminState);
+        return;
+      } catch (err: any) {
+        lastTxError = err;
+        if (err.message?.includes('170') || err.message?.includes('InvalidDustSpendProof')) {
+          this.logger.warn(`[MidnightService] DUST spend proof stale (attempt ${txAttempt}/${MAX_TX_RETRIES}). Rebuilding tx...`);
+          await new Promise(r => setTimeout(r, 5_000));
+        } else {
+          throw err;
+        }
+      }
+    }
+    throw lastTxError;
   }
 
   private async _setPrivateState(id: string, state: PohPrivateState): Promise<void> {
@@ -195,21 +215,37 @@ export class MidnightService {
   }
 
   private async _registerVerifier(): Promise<void> {
-    await this._setPrivateState('poh-admin-state', {
-      secretKey: crypto.getRandomValues(new Uint8Array(32)),
-      credentialSalt: new Uint8Array(32),
-      verifierSigningKey: 0n,
-      attestation: null,
-      attestedVerifierPk: null,
-      expiresAt: 0n,
-    });
-    await submitCallTx<Contract, 'registerVerifier'>(this.providers, {
-      compiledContract: CompiledPohCoreContract,
-      contractAddress: this.contractAddress,
-      privateStateId: 'poh-admin-state',
-      circuitId: 'registerVerifier',
-      args: [this.verifier.pk],
-    } as any);
+    const MAX_RETRIES = 5;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await this._setPrivateState('poh-admin-state', {
+          secretKey: crypto.getRandomValues(new Uint8Array(32)),
+          credentialSalt: new Uint8Array(32),
+          verifierSigningKey: 0n,
+          attestation: null,
+          attestedVerifierPk: null,
+          expiresAt: 0n,
+        });
+        await submitCallTx<Contract, 'registerVerifier'>(this.providers, {
+          compiledContract: CompiledPohCoreContract,
+          contractAddress: this.contractAddress,
+          privateStateId: 'poh-admin-state',
+          circuitId: 'registerVerifier',
+          args: [this.verifier.pk],
+        } as any);
+        return;
+      } catch (err: any) {
+        lastError = err;
+        if (err.message?.includes('170') || err.message?.includes('InvalidDustSpendProof')) {
+          this.logger.warn(`[MidnightService] Verifier registration: DUST proof stale (attempt ${attempt}/${MAX_RETRIES}). Rebuilding...`);
+          await new Promise(r => setTimeout(r, 5_000));
+        } else {
+          throw err;
+        }
+      }
+    }
+    throw lastError;
   }
 
   /**
