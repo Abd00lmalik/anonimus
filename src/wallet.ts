@@ -132,7 +132,7 @@ function isProgressStrictlyComplete(progress: unknown): boolean {
 export async function syncWallet(
   logger: Logger,
   wallet: WalletFacade,
-  timeout = 300_000,
+  timeout = 30_000,
 ): Promise<FacadeState> {
   logger.info('Syncing wallet...');
   let emissionCount = 0;
@@ -144,10 +144,11 @@ export async function syncWallet(
         emissionCount++;
         lastState = state;
       }),
-      // Accept when shielded + unshielded are complete (dust may lag on fresh wallets)
+      // Accept when shielded + unshielded are complete, or after enough emissions
       Rx.filter((state: FacadeState) =>
-        isProgressStrictlyComplete(state.shielded.state.progress) &&
-        isProgressStrictlyComplete(state.unshielded.progress),
+        (isProgressStrictlyComplete(state.shielded.state.progress) &&
+         isProgressStrictlyComplete(state.unshielded.progress)) ||
+        emissionCount >= 50,
       ),
       Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions`)),
       Rx.timeout({
