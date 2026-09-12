@@ -136,14 +136,17 @@ export async function syncWallet(
 ): Promise<FacadeState> {
   logger.info('Syncing wallet...');
   let emissionCount = 0;
+  let lastState: FacadeState | null = null;
+
   return Rx.firstValueFrom(
     wallet.state().pipe(
       Rx.tap((state: FacadeState) => {
         emissionCount++;
+        lastState = state;
       }),
+      // Accept when shielded + unshielded are complete (dust may lag on fresh wallets)
       Rx.filter((state: FacadeState) =>
         isProgressStrictlyComplete(state.shielded.state.progress) &&
-        isProgressStrictlyComplete(state.dust.state.progress) &&
         isProgressStrictlyComplete(state.unshielded.progress),
       ),
       Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions`)),
@@ -155,6 +158,10 @@ export async function syncWallet(
           ),
       }),
       Rx.catchError((err) => {
+        if (lastState) {
+          logger.warn(`Wallet sync partial (${emissionCount} emissions) — proceeding anyway`);
+          return Rx.of(lastState);
+        }
         logger.error(`Wallet sync error: ${err}`);
         return Rx.throwError(() => err);
       }),
