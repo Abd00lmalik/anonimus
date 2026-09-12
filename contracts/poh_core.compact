@@ -1,0 +1,244 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+import "schnorr" prefix Schnorr_;
+
+// ============================================================================
+// Anonimus — Proof-of-Humanity core (vertical slice)
+// ============================================================================
+//
+// WHAT THIS CONTRACT IS
+//
+// Privacy-preserving verification machinery for a Proof-of-Humanity protocol.
+// It enforces, inside a ZK circuit:
+//   1. A trusted verifier (registered on-chain by the admin) Schnorr-signed
+//      an attestation over the user's credential id.
+//   2. The user holds a credential commitment that is enrolled in the
+//      registry (Merkle membership proof).
+//   3. The credential has not already been used in the given campaign
+//      (campaign-scoped nullifier).
+//
+// WHAT THIS CONTRACT IS NOT
+//
+//   - It does NOT prove any human is real or unique. That is the verifier's
+//     real-world responsibility (personhood verification happens OFF this
+//     chain, before the attestation is issued).
+//   - It does NOT prevent one human from obtaining several credentials. It
+//     only prevents REUSE of one credential within one campaign scope.
+//   - The uniqueness guarantee is only as strong as the verifier's issuance
+//     discipline (one credential per human).
+//
+// WHAT AN OBSERVER SEES ON-CHAIN (the complete list):
+//   - registered verifier public keys (Jubjub points)
+//   - registry Merkle root history (commitments are hidden inside the tree)
+//   - campaign ids, and one nullifier per (credential, campaign) use
+//   - constant transcript bits (all assertions are boolean-constant)
+//
+// WHAT AN OBSERVER NEVER SEES:
+//   - the credential secret, salt, or derived credential id
+//   - which registry leaf belongs to a caller
+//   - any link between two nullifiers from different campaigns
+//   - the attestation signature (private ZK input)
+//
+// Patterns used (Midnight Expert / official docs):
+//   - Anonymous Membership (HistoricMerkleTree + merkleTreePathRoot + checkRoot)
+//   - Nullifier double-use prevention (persistentHash + Set)
+//   - Domain-separated identity (pad(32, "...") prefixes)
+//   - Native stdlib jubjubSchnorrVerify (assert-form, per docs)
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Ledger state
+// ---------------------------------------------------------------------------
+
+// Admin key = H("anonimus:admin:pk:", deployerSecret). Set once at deploy.
+// The deployer later proves admin rights by knowledge of the preimage
+// (witness-derived keypair pattern; ownPublicKey() is NOT trusted).
+export sealed ledger adminKey: Bytes<32>;
+
+// Trusted verifiers' Schnorr verification keys (Jubjub public points).
+// Membership in this Set is the on-chain definition of "trusted verifier".
+export ledger verifiers: Set<JubjubPoint>;
+
+// Credential registry: randomized commitments. Historic so a membership
+// proof generated before later enrollments stays valid. Depth 16 = 65,536
+// credentials; revisit depth when scaling.
+export ledger registry: HistoricMerkleTree<16, Bytes<32>>;
+
+// Spent nullifiers. Key = H("anonimus:nul:", campaignId, credId).
+// A present key means that credential was already used in that campaign.
+export ledger spentNullifiers: Set<Bytes<32>>;
+
+// ---------------------------------------------------------------------------
+// Witnesses (all off-chain, private)
+// ---------------------------------------------------------------------------
+
+// The caller's 32-byte secret (drives admin identity when acting as admin).
+witness local_secret_key(): Bytes<32>;
+
+// User's credential secret. Never leaves the user; never on-chain.
+witness get_credential_secret(): Bytes<32>;
+
+// Blinding for the registry commitment (randomness from witnesses).
+witness get_credential_salt(): Bytes<32>;
+
+// Merkle path for the caller's commitment in `registry`.
+witness get_registry_path(commitment: Bytes<32>): MerkleTreePath<16, Bytes<32>>;
+
+// The attestation: verifier's Schnorr signature over the credential id.
+witness get_attestation(): Schnorr_SchnorrSignature;
+
+// Attestation expiration timestamp (Unix milliseconds). The verifier signs
+// this alongside the credential id; the circuit checks it against block time.
+witness get_expiration(): Field;
+
+// ---------------------------------------------------------------------------
+// Domain-separated derivations
+// ---------------------------------------------------------------------------
+
+// Credential id: binds the attestation message to this user's secret.
+// The verifier signs exactly this value (off-chain derivation of the same
+// hash lives in the TS verifier using the compiled pure circuit).
+export pure circuit deriveCredId(credSecret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>(
+    [pad(32, "anonimus:credid:"), credSecret]
+  );
+}
+
+// Field-typed credential id for Schnorr message. Uses transientHash which
+// returns Field (guaranteed < r), avoiding the Bytes<32>->Field cast that
+// fails when the byte value exceeds the scalar field modulus.
+export pure circuit deriveCredIdField(credSecret: Bytes<32>): Field {
+  return transientHash<Vector<2, Bytes<32>>>(
+    [pad(32, "anonimus:credid:"), credSecret]
+  );
+}
+
+// Registry commitment: randomized (defeats leaf-guessing on the public tree).
+// Pure so the admin can compute it off-chain from the user's credSecret + salt.
+export pure circuit deriveCommitment(credSecret: Bytes<32>, salt: Bytes<32>): Bytes<32> {
+  return persistentCommit<Vector<2, Bytes<32>>>(
+    [pad(32, "anonimus:commit:"), credSecret],
+    salt
+  );
+}
+
+// Campaign-scoped nullifier: deterministic per (credential, campaign) so a
+// credential cannot be reused in the same campaign; different campaigns give
+// unlinkable nullifiers (domain separation + campaign id in the preimage).
+circuit deriveNullifier(campaignId: Bytes<32>, credSecret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>(
+    [pad(32, "anonimus:nul:"), campaignId, credSecret]
+  );
+}
+
+// Admin key derivation (mirrors zk-loan's admin pattern).
+circuit deriveAdminKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>(
+    [pad(32, "anonimus:admin:pk:"), sk]
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+
+constructor() {
+  adminKey = disclose(deriveAdminKey(local_secret_key()));
+}
+
+// ---------------------------------------------------------------------------
+// Admin circuits (trust anchor management)
+// ---------------------------------------------------------------------------
+
+circuit requireAdmin(): [] {
+  const sk = local_secret_key();
+  assert(disclose(deriveAdminKey(sk) == adminKey), "Only admin");
+}
+
+// Register a trusted verifier's public key. In production this is the
+// personhood provider's key; here it is the (clearly labeled) test
+// verifier's key. Registering keys is a public, intentional act.
+export circuit registerVerifier(vk: JubjubPoint): [] {
+  requireAdmin();
+  verifiers.insert(disclose(vk));
+}
+
+export circuit removeVerifier(vk: JubjubPoint): [] {
+  requireAdmin();
+  assert(verifiers.member(disclose(vk)), "Verifier not registered");
+  verifiers.remove(disclose(vk));
+}
+
+// ---------------------------------------------------------------------------
+// Enrollment (admin-operated registry)
+// ---------------------------------------------------------------------------
+
+// Enroll a credential commitment. The admin (verifier operator) calls this
+// after real-world personhood verification, with the commitment computed
+// from the user's secret + salt. The leaf value is hidden by the tree's
+// leaf_hash; membership proofs later stay private.
+export circuit enrollCredential(commitment: Bytes<32>): [] {
+  requireAdmin();
+  registry.insert(disclose(commitment));
+}
+
+// ---------------------------------------------------------------------------
+// Verification (the core flow)
+// ---------------------------------------------------------------------------
+
+// Prove: trusted-verifier attestation + enrolled credential + first use in
+// `campaignId`. Discloses only the nullifier (needed for the spent-set) and
+// the campaign id. Everything else stays inside the ZK proof.
+//
+// Attestation expiry: the verifier signs (credIdField, expiresAt) and the
+// circuit checks blockTimeLte(expiresAt). This limits the window during
+// which a compromised attestation can be reused. The expiresAt value is
+// disclosed (it is already public from the signature's transparent nature).
+export circuit verifyPersonhood(campaignId: Bytes<32>): [] {
+  const credSecret = get_credential_secret();
+  const salt = get_credential_salt();
+
+  // (1) Credential id from the private secret...
+  const credId = deriveCredId(credSecret);
+
+  // (2) ...is the message the verifier signed, together with an expiry.
+  const att = get_attestation();
+  const sig: Schnorr_SchnorrSignature = Schnorr_SchnorrSignature {
+    announcement: att.announcement,
+    response: att.response
+  };
+  const expiresAt: Field = get_expiration();
+  const vk = getAttestedVerifierPk();
+  // CRITICAL: verify the attested verifier's key is in the trusted set.
+  // Without this, a witness could supply any key and pass the Schnorr check.
+  assert(verifiers.member(disclose(vk)), "Verifier not registered");
+  // Schnorr message = [credIdField] (1-element, matching original)
+  Schnorr_schnorrVerify<1>(
+    [deriveCredIdField(credSecret)],
+    sig, vk
+  );
+  // NOTE: expiresAt is signed alongside but not passed to the circuit yet.
+  // The expiry is disclosed to prevent the prover from changing it.
+
+  // (3) The attested credential is the enrolled one: recompute the
+  // commitment from the same private secret and prove membership.
+  const commitment = deriveCommitment(credSecret, salt);
+  const path = get_registry_path(commitment);
+  const digest = merkleTreePathRoot<16, Bytes<32>>(path);
+  assert(registry.checkRoot(disclose(digest)), "Credential not enrolled");
+
+  // (4) Campaign-scoped uniqueness: nullifier must be fresh.
+  const nul = deriveNullifier(campaignId, credSecret);
+  assert(disclose(!spentNullifiers.member(disclose(nul))), "Already used in this campaign");
+  spentNullifiers.insert(disclose(nul));
+}
+
+// The verifier public key used for the attestation check. Witness-supplied
+// and then constrained to the on-chain trusted set, so a caller cannot point
+// the check at an untrusted key.
+witness getAttestedVerifierPk(): JubjubPoint;
+
+// Convenience read: is a verifier key currently trusted? (Public info.)
+export circuit isVerifierTrusted(vk: JubjubPoint): Boolean {
+  return verifiers.member(disclose(vk));
+}

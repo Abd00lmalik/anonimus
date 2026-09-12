@@ -1,0 +1,26 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+
+// Anonimus toolchain smoke test — NOT the Phase 1 product contract.
+// Purpose: prove the real compactc toolchain compiles Anonimus code.
+// Uses only patterns documented in the Midnight Expert compact-core references:
+// domain-separated persistentHash, witness-sourced key, disclose() rules.
+
+export ledger deployedBy: Bytes<32>;
+
+witness local_secret_key(): Bytes<32>;
+
+// Domain-separated key derivation (pattern: pad(32, "<domain-tag>"), sk)
+circuit anonimus_public_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>(
+    [pad(32, "anonimus:pk:"), sk]
+  );
+}
+
+constructor() {
+  deployedBy = disclose(anonimus_public_key(local_secret_key()));
+}
+
+export circuit whoAmI(): Bytes<32> {
+  return disclose(anonimus_public_key(local_secret_key()));
+}

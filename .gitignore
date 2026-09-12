@@ -1,0 +1,36 @@
+# Secrets
+.env
+.env.*
+!.env.example
+.kapa-auth-state.json
+.kapa-login-url.txt
+
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Midnight local state
+db/
+*.zkas
+zk/
+midnight-level-db/
+
+# Data persistence
+data/
+
+# Tooling checkouts (reference material, not product code)
+.tmp/
+
+# Logs
+*.log
+
+# Design assets (local only)
+*.jpg
+*.png
+
+# Reports (local only)
+PREPROD-AUDIT-REPORT.md

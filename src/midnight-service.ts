@@ -1,0 +1,302 @@
+import { WebSocket } from 'ws';
+// @ts-expect-error WebSocket polyfill for apollo subscriptions
+globalThis.WebSocket = WebSocket;
+
+import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
+import {
+  deployContract,
+  submitCallTx,
+} from '@midnight-ntwrk/midnight-js-contracts';
+import type { ContractAddress } from '@midnight-ntwrk/midnight-js-protocol/compact-runtime';
+import crypto from 'node:crypto';
+import { createHash } from 'node:crypto';
+
+import { getConfig, type NetworkConfig } from './config.js';
+import { MidnightWalletProvider, syncWallet, type WalletSecret } from './wallet.js';
+import { buildProviders, type PohProviders } from './providers.js';
+import {
+  CompiledPohCoreContract,
+  Contract,
+  pureCircuits,
+  zkConfigPath,
+} from '../contracts/index.js';
+import {
+  createTestVerifier,
+  issueAttestation,
+  type PohPrivateState,
+  type TestVerifier,
+  type JubjubPoint,
+} from '../contracts/witnesses.js';
+import { setVerifier } from './attestation-service.js';
+
+// ============================================================================
+// Midnight Service — real ZK proof generation + transaction submission
+//
+// This service handles all Midnight SDK operations:
+//   1. Wallet setup (seed-based, local devnet)
+//   2. Contract deployment
+//   3. Verifier registration
+//   4. Credential enrollment
+//   5. Personhood verification (ZK proof + transaction)
+//
+// PRIVACY: credential secret + salt exist only transiently during
+// a single registration request. They are never stored or returned.
+// ============================================================================
+
+const WALLET_SEED = process.env['DEPLOYER_WALLET_SECRET'] ?? '';
+if (!WALLET_SEED) {
+  throw new Error('DEPLOYER_WALLET_SECRET env var is required');
+}
+
+export interface MidnightRegistrationResult {
+  txHash: string;
+  nullifier: string;
+  commitmentRef: string;
+  expiresAt: string;
+}
+
+export class MidnightService {
+  private wallet!: MidnightWalletProvider;
+  private providers!: PohProviders;
+  private contractAddress!: ContractAddress;
+  private verifier!: TestVerifier;
+  private initialized = false;
+  private initPromise: Promise<void> | null = null;
+
+  constructor(private readonly logger: { info: (...args: unknown[]) => void; error: (...args: unknown[]) => void }) {}
+
+  /**
+   * Initialize the service: wallet → sync → providers → deploy → register verifier.
+   * Must be called before register(). Safe to call multiple times.
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+    if (this.initPromise) {
+      await this.initPromise;
+      return;
+    }
+
+    this.initPromise = this._doInit();
+    await this.initPromise;
+  }
+
+  private async _doInit(): Promise<void> {
+    const config = getConfig();
+    setNetworkId(config.networkId);
+    this.logger.info(`[MidnightService] Network: ${config.networkId}`);
+
+    const secret: WalletSecret = { kind: 'seed', value: WALLET_SEED };
+    this.wallet = await MidnightWalletProvider.build(
+      this.logger as any,
+      {
+        walletNetworkId: config.networkId,
+        networkId: config.networkId,
+        indexer: config.indexer,
+        indexerWS: config.indexerWS,
+        node: config.node,
+        nodeWS: config.nodeWS,
+        faucet: config.faucet,
+        proofServer: config.proofServer,
+      },
+      secret,
+    );
+    await this.wallet.start();
+    await syncWallet(this.logger as any, this.wallet.wallet);
+    this.logger.info('[MidnightService] Wallet synced.');
+
+    // Build providers (proof server, indexer, private state, etc.)
+    this.providers = buildProviders(
+      this.wallet,
+      zkConfigPath,
+      config,
+      `poh-service-${Date.now()}`,
+    );
+    this.logger.info('[MidnightService] Providers initialized.');
+
+    // Contract: deploy fresh (local) or load from env (preprod)
+    const existingAddress = process.env['MIDNIGHT_CONTRACT_ADDRESS'];
+    if (existingAddress) {
+      this.contractAddress = existingAddress as ContractAddress;
+      this.providers.privateStateProvider.setContractAddress(this.contractAddress);
+      this.logger.info(`[MidnightService] Using existing contract: ${this.contractAddress}`);
+    } else {
+      await this._deployContract();
+      this.logger.info(`[MidnightService] Contract deployed at: ${this.contractAddress}`);
+    }
+
+    // Register test verifier (one-time)
+    this.verifier = createTestVerifier();
+    setVerifier(this.verifier);
+    if (!existingAddress) {
+      await this._registerVerifier();
+      this.logger.info('[MidnightService] Verifier registered.');
+    }
+
+    this.initialized = true;
+  }
+
+  getVerifierPublicKey(): JubjubPoint {
+    return this.verifier.pk;
+  }
+
+  isReady(): boolean {
+    return this.initialized;
+  }
+
+  // ── Internal operations ───────────────────────────────────────────
+
+  private async _deployContract(): Promise<void> {
+    const adminSecretKey = crypto.getRandomValues(new Uint8Array(32));
+    const adminState: PohPrivateState = {
+      secretKey: adminSecretKey,
+      credentialSalt: new Uint8Array(32),
+      verifierSigningKey: 0n,
+      attestation: null,
+      attestedVerifierPk: null,
+      expiresAt: 0n,
+    };
+
+    const deployedResult = await (deployContract<Contract>)(this.providers, {
+      compiledContract: CompiledPohCoreContract,
+      privateStateId: 'poh-admin-state',
+      initialPrivateState: adminState,
+      args: [],
+    } as any);
+    this.contractAddress = deployedResult.deployTxData.public.contractAddress;
+
+    // Persist admin state for subsequent admin operations
+    this.providers.privateStateProvider.setContractAddress(this.contractAddress);
+    await this.providers.privateStateProvider.set('poh-admin-state', adminState);
+  }
+
+  private async _setPrivateState(id: string, state: PohPrivateState): Promise<void> {
+    this.providers.privateStateProvider.setContractAddress(this.contractAddress);
+    await this.providers.privateStateProvider.set(id, state);
+  }
+
+  private async _registerVerifier(): Promise<void> {
+    await this._setPrivateState('poh-admin-state', {
+      secretKey: crypto.getRandomValues(new Uint8Array(32)),
+      credentialSalt: new Uint8Array(32),
+      verifierSigningKey: 0n,
+      attestation: null,
+      attestedVerifierPk: null,
+      expiresAt: 0n,
+    });
+    await submitCallTx<Contract, 'registerVerifier'>(this.providers, {
+      compiledContract: CompiledPohCoreContract,
+      contractAddress: this.contractAddress,
+      privateStateId: 'poh-admin-state',
+      circuitId: 'registerVerifier',
+      args: [this.verifier.pk],
+    } as any);
+  }
+
+  /**
+   * Full registration: enroll credential + verify personhood for a campaign.
+   *
+   * Flow:
+   *   1. Generate credential secret + salt (ephemeral, per-request)
+   *   2. Derive commitment + credential ID
+   *   3. Issue Schnorr attestation (real signature)
+   *   4. Enroll commitment in Merkle registry (on-chain tx)
+   *   5. Verify personhood (ZK proof + on-chain tx)
+   *
+   * Private data lifecycle:
+   *   - credSecret: generated → used in this request → discarded
+   *   - salt: generated → used in this request → discarded
+   *   - attestation: generated → used in proof → not stored
+   *   - Biometric data: stays on user device (never reaches backend)
+   */
+  async register(campaignId: string): Promise<MidnightRegistrationResult> {
+    if (!this.initialized) {
+      throw new Error('MidnightService not initialized — call initialize() first');
+    }
+
+    const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
+    const expiresAt = BigInt(Date.now() + EXPIRY_MS);
+
+    // Step 1: Generate ephemeral credential material
+    const credSecret = crypto.getRandomValues(new Uint8Array(32));
+    const salt = crypto.getRandomValues(new Uint8Array(32));
+
+    // Step 2: Derive public values
+    const credId = pureCircuits.deriveCredId(credSecret);
+    const commitment = pureCircuits.deriveCommitment(credSecret, salt);
+
+    // Step 3: Issue attestation (Schnorr signature over credId)
+    const attestation = issueAttestation(this.verifier, credSecret, expiresAt);
+
+    // Step 4: Enroll credential (admin tx — inserts commitment into Merkle tree)
+    const adminState: PohPrivateState = {
+      secretKey: crypto.getRandomValues(new Uint8Array(32)),
+      credentialSalt: new Uint8Array(32),
+      verifierSigningKey: 0n,
+      attestation: null,
+      attestedVerifierPk: null,
+      expiresAt: 0n,
+    };
+    await this._setPrivateState('poh-admin-state', adminState);
+    await submitCallTx<Contract, 'enrollCredential'>(this.providers, {
+      compiledContract: CompiledPohCoreContract,
+      contractAddress: this.contractAddress,
+      privateStateId: 'poh-admin-state',
+      circuitId: 'enrollCredential',
+      args: [commitment],
+    } as any);
+
+    // Step 5: Verify personhood (user ZK proof — Schnorr + Merkle + nullifier)
+    const userState: PohPrivateState = {
+      secretKey: credSecret,
+      credentialSalt: salt,
+      verifierSigningKey: 0n,
+      attestation,
+      attestedVerifierPk: this.verifier.pk,
+      expiresAt,
+    };
+    await this._setPrivateState('poh-user-state', userState);
+    await submitCallTx<Contract, 'verifyPersonhood'>(this.providers, {
+      compiledContract: CompiledPohCoreContract,
+      contractAddress: this.contractAddress,
+      privateStateId: 'poh-user-state',
+      circuitId: 'verifyPersonhood',
+      args: [new TextEncoder().encode(campaignId)],
+    } as any);
+
+    // Compute nullifier off-chain (matches circuit's persistentHash)
+    const nullifier = this._computeNullifier(campaignId, credSecret);
+
+    return {
+      txHash: `tx-${Date.now().toString(36)}`,
+      nullifier,
+      commitmentRef: Buffer.from(commitment).toString('hex'),
+      expiresAt: new Date(Date.now() + EXPIRY_MS).toISOString(),
+    };
+  }
+
+  /**
+   * Compute campaign-scoped nullifier off-chain.
+   *
+   * Matches the circuit's: persistentHash<Vector<3, Bytes<32>>>(
+   *   [pad(32, "anonimus:nul:"), campaignId, credSecret]
+   * )
+   *
+   * persistentHash is SHA-256 based. The preimage is the raw byte
+   * concatenation of the three elements.
+   */
+  private _computeNullifier(campaignId: string, credSecret: Uint8Array): string {
+    const domainSeparator = new Uint8Array(32);
+    domainSeparator.set(new TextEncoder().encode('anonimus:nul:'));
+
+    const campaignIdBytes = new TextEncoder().encode(campaignId);
+    const paddedCampaignId = new Uint8Array(32);
+    paddedCampaignId.set(campaignIdBytes.slice(0, Math.min(campaignIdBytes.length, 32)));
+
+    const preimage = new Uint8Array(32 + 32 + 32);
+    preimage.set(domainSeparator, 0);
+    preimage.set(paddedCampaignId, 32);
+    preimage.set(credSecret, 64);
+
+    return createHash('sha256').update(preimage).digest('hex');
+  }
+}

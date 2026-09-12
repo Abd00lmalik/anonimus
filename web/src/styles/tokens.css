@@ -1,0 +1,70 @@
+:root {
+  /* Void 60% */
+  --bg-primary: #07080A;
+  --bg-secondary: #0C0E12;
+  --bg-surface: #12151A;
+  --bg-elevated: #181C23;
+
+  /* Bone 30% */
+  --text-primary: #F3EEE4;
+  --text-secondary: #B8B3A8;
+  --text-muted: #7A766E;
+  --bone: #E8E2D6;
+  --border: rgba(243, 238, 228, 0.08);
+  --border-hover: rgba(243, 238, 228, 0.15);
+
+  /* Electrum 10% */
+  --accent: #C6A35A;
+  --accent-hover: #D4B56E;
+  --accent-muted: rgba(198, 163, 90, 0.14);
+  --accent-glow: rgba(198, 163, 90, 0.25);
+
+  /* Semantic */
+  --success: #8FBF9A;
+  --warning: #C9A066;
+  --error: #C97A72;
+
+  /* Typography */
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-ui: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Geist Mono', 'SF Mono', monospace;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* Transitions */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 180ms;
+  --duration-normal: 280ms;
+  --duration-slow: 480ms;
+  --duration-entrance: 700ms;
+
+  /* Layout */
+  --max-width: 1200px;
+  --nav-height: 72px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 0ms;
+    --duration-entrance: 0ms;
+  }
+}
