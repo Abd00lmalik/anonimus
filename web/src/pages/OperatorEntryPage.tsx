@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { useOperator, type OperatorAuthStage } from '../contexts/OperatorContext'
+import { useOperator } from '../contexts/OperatorContext'
 import { Button } from '../components/ui/Button'
 
 const WALLETS = [
@@ -360,7 +360,7 @@ export function OperatorEntryPage() {
       ) : stage === 'unavailable' ? (
         <UnavailableState error={error || 'Wallet connection is unavailable.'} />
       ) : (
-        <IdleState onConnect={handleConnect} connectingProvider={stage === 'connecting' ? selectedWallet : null} />
+        <IdleState onConnect={handleConnect} connectingProvider={null} />
       )}
     </div>
   )

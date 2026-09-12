@@ -211,7 +211,7 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     try {
       const { registrations: apiRegs } = await fetchRegistrations(campaignId)
       return apiRegs
-        .filter(r => true) // all are verified in this phase
+        .filter(() => true) // all are verified in this phase
         .map(r => ({ walletHandle: r.walletHandle, registeredAt: r.registeredAt }))
     } catch {
       return []

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useDAppVerification } from '../contexts/DAppVerificationContext'
 import { Button } from '../components/ui/Button'
@@ -23,7 +23,6 @@ function BlankSignet() {
 }
 
 export function DAppSuccessPage() {
-  const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { request, receipt } = useDAppVerification()
 

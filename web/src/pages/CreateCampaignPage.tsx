@@ -136,7 +136,6 @@ function DateInput({ value, onChange }: { value: string; onChange: (v: string) =
 export function CreateCampaignPage() {
   const navigate = useNavigate()
   const { createCampaign } = useCampaign()
-  const [showConfirmation, setShowConfirmation] = useState(false)
   const [form, setForm] = useState<CampaignCreateInput>({
     title: '',
     organizer: '',

@@ -1,9 +1,8 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { fetchCampaign, type ApiCampaign } from '../lib/api'
+import { fetchCampaign } from '../lib/api'
 import { useVerification } from '../contexts/VerificationContext'
-import { Button } from '../components/ui/Button'
 import type { Campaign } from '../types'
 
 const WALLETS = [

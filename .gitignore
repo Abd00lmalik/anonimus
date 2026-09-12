@@ -20,7 +20,7 @@ zk/
 midnight-level-db/
 
 # Data persistence
-data/
+/data/
 
 # Tooling checkouts (reference material, not product code)
 .tmp/

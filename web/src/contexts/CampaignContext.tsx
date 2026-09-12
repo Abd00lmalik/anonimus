@@ -6,7 +6,6 @@ import {
   createCampaignApi,
   fetchRegistrations,
   type ApiCampaign,
-  type ApiRegistration,
 } from '../lib/api'
 
 // ============================================================================

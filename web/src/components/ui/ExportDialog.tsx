@@ -8,15 +8,15 @@ interface ExportDialogProps {
   campaignId: string
   campaignTitle: string
   registrationCount: number
-  getExportData: (campaignId: string) => { walletHandle: string; registeredAt: string }[]
+  getExportData: (campaignId: string) => Promise<{ walletHandle: string; registeredAt: string }[]> | { walletHandle: string; registeredAt: string }[]
 }
 
 export function ExportDialog({ isOpen, onClose, campaignId, campaignTitle, registrationCount, getExportData }: ExportDialogProps) {
   const [format, setFormat] = useState<'csv' | 'json'>('csv')
   const [exported, setExported] = useState(false)
 
-  const handleExport = () => {
-    const data = getExportData(campaignId)
+  const handleExport = async () => {
+    const data = await Promise.resolve(getExportData(campaignId))
 
     if (format === 'json') {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })

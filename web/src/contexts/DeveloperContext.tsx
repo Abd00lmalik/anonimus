@@ -45,7 +45,7 @@ export function DeveloperProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const toggleStatus = useCallback((id: string) => {
-    const req = mockDevRequests.find(r => r.id === id)
+    const req = mockDevRequests.find((r: any) => r.id === id)
     if (!req) return
     const next: DevRequestStatus = req.status === 'active' ? 'paused' : 'active'
     updateDevRequestStatus(id, next)

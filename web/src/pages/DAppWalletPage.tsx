@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useDAppVerification } from '../contexts/DAppVerificationContext'
-import { Button } from '../components/ui/Button'
 
 const WALLETS = [
   {
