@@ -85,7 +85,7 @@ export class MidnightService {
     setNetworkId(config.networkId);
     this.logger.info(`[MidnightService] Network: ${config.networkId}`);
 
-    const secret: WalletSecret = { kind: 'seed', value: WALLET_SEED };
+    const secret: WalletSecret = { kind: 'mnemonic', value: WALLET_SEED };
     this.wallet = await MidnightWalletProvider.build(
       this.logger as any,
       {

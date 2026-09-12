@@ -23,7 +23,7 @@ export const LOCAL_CONFIG: NetworkConfig = {
 // Midnight Preprod — public infrastructure, no faucet needed.
 // Proof server is always local (localhost:6300) regardless of network.
 export const PREPROD_CONFIG: NetworkConfig = {
-  networkId: 'preprod-0.1',
+  networkId: 'preprod',
   indexer: 'https://indexer.preprod.midnight.network/api/v4/graphql',
   indexerWS: 'wss://indexer.preprod.midnight.network/api/v4/graphql/ws',
   node: 'https://rpc.preprod.midnight.network',
