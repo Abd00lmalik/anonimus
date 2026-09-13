@@ -71,7 +71,7 @@ export async function assembleWallet(
     : WalletSeeds.fromMasterSeed(secret.value);
   /* eslint-disable @typescript-eslint/no-explicit-any */
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  const keystore = createKeystore({ kind: 'UnshieldedSecretKey' as any, secret: seeds.unshielded }, networkId);
+  const keystore = createKeystore({ kind: 'schnorr', secret: seeds.unshielded } as any, networkId);
   const zswapSecretKeys = ZswapSecretKeys.fromSeed(seeds.shielded) as any;
   const dustSecretKey = DustSecretKey.fromSeed(seeds.dust) as any;
   const unshieldedPublicKey = PublicKey.fromKeyStore(keystore);
