@@ -102,7 +102,8 @@ export class MidnightService {
       secret,
       fastSyncRoot ? { fastSync: { referenceRoot: fastSyncRoot } } : undefined,
     );
-    await this.wallet.start();
+    // Note: FluentWalletBuilder.build() already starts the wallet internally.
+    // Calling start() again with v9 keys to a v8 dust wallet would cause errors.
     await syncWallet(this.logger as any, this.wallet.wallet);
     this.logger.info('[MidnightService] Wallet synced.');
 
