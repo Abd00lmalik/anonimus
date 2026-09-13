@@ -11,8 +11,10 @@ import {
   WalletEntrySchema,
   WalletFacade,
 } from '@midnight-ntwrk/wallet-sdk';
-import { createKeystore, PublicKey } from '@midnight-ntwrk/wallet-sdk/unshielded';
-import { type DustWalletOptions, type EnvironmentConfiguration, FluentWalletBuilder, WalletSeeds } from '@midnight-ntwrk/testkit-js';
+import { ShieldedWallet, V9_NATIVE_FORK_VERSION } from '@midnight-ntwrk/wallet-sdk/shielded';
+import { DustWallet } from '@midnight-ntwrk/wallet-sdk/dust';
+import { createKeystore, PublicKey, UnshieldedWallet } from '@midnight-ntwrk/wallet-sdk/unshielded';
+import { type EnvironmentConfiguration, WalletSeeds } from '@midnight-ntwrk/testkit-js';
 import type { Logger } from 'pino';
 import type { WalletSecret } from '../wallet.js';
 import { isSeedable, preSeedNewWallet } from './preseed.js';
@@ -30,6 +32,7 @@ export interface AssembledWallet {
   keystore: UnshieldedKeystore;
   seeded: string[];
   referenceHeight: number | null;
+  walletSeeds: { shielded: Uint8Array; dust: Uint8Array };
 }
 
 export async function getChainTipHeight(indexerHttpUrl: string): Promise<number | undefined> {
@@ -67,9 +70,23 @@ export async function assembleWallet(
   const dustSecretKey = DustSecretKey.fromSeed(seeds.dust) as any;
   const unshieldedPublicKey = PublicKey.fromKeyStore(keystore);
 
-  const envConfig: EnvironmentConfiguration = {
-    ...env,
-    walletNetworkId: networkId,
+  const config = {
+    networkId,
+    forks: { v9: V9_NATIVE_FORK_VERSION },
+    indexerClientConnection: { indexerHttpUrl: env.indexer, indexerWsUrl: env.indexerWS },
+    provingServerUrl: new URL(env.proofServer),
+    relayURL: new URL(env.nodeWS),
+    txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
+    costParameters: { additionalFeeOverhead: 1_000n, feeBlocksMargin: 5 },
+  };
+
+  const dustConfig = {
+    ...config,
+    costParameters: {
+      ledgerParams: LedgerParameters.initialParameters(),
+      additionalFeeOverhead: 1_000n,
+      feeBlocksMargin: 5,
+    },
   };
 
   let seededSnaps: ReturnType<typeof preSeedNewWallet> = null;
@@ -96,24 +113,42 @@ export async function assembleWallet(
     }
   }
 
-  const builder = FluentWalletBuilder.forEnvironment(envConfig)
-    .withMnemonic(secret.value)
-    .withDustOptions({
-      ledgerParams: LedgerParameters.initialParameters(),
-      additionalFeeOverhead: 1_000n,
-      feeBlocksMargin: 5,
-    });
+  const Shielded = ShieldedWallet(config);
+  const shielded = seededSnaps?.shielded
+    ? Shielded.restore(seededSnaps.shielded)
+    : Shielded.startWithSeed(seeds.shielded);
 
-  const facade = await builder.build() as any;
+  const unshielded = seededSnaps?.unshielded
+    ? UnshieldedWallet(config).restore(seededSnaps.unshielded)
+    : UnshieldedWallet(config).startWithPublicKey(unshieldedPublicKey);
+
+  const Dust = DustWallet(dustConfig);
+  const dust = seededSnaps?.dust
+    ? Dust.restore(seededSnaps.dust)
+    : Dust.startWithSeed(seeds.dust, LedgerParameters.initialParameters().dust);
+
+  const facade = await WalletFacade.init({
+    configuration: config,
+    shielded: () => shielded,
+    unshielded: () => unshielded,
+    dust: () => dust,
+  });
+
   const seeded: string[] = [];
-  referenceHeight = seededSnaps ? referenceHeight : null;
-
-  if (seededSnaps) {
-    logger.info(
-      `Fast-sync: reference available at height ${referenceHeight}, but ` +
-      `FluentWalletBuilder does not support preseed injection. Syncing from genesis.`,
-    );
+  if (seededSnaps?.shielded) seeded.push('shielded');
+  if (seededSnaps?.unshielded) seeded.push('unshielded');
+  if (seededSnaps?.dust) seeded.push('dust');
+  if (seeded.length > 0) {
+    logger.info(`Fast-sync: seeded [${seeded.join(', ')}] from reference at height ${referenceHeight} — sub-wallets start near tip.`);
   }
 
-  return { facade, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight };
+  return {
+    facade,
+    zswapSecretKeys,
+    dustSecretKey,
+    keystore,
+    seeded,
+    referenceHeight,
+    walletSeeds: { shielded: seeds.shielded, dust: seeds.dust },
+  };
 }

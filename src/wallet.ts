@@ -31,6 +31,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     private readonly zswapSecretKeys: ZswapSecretKeys,
     private readonly dustSecretKey: DustSecretKey,
     unshieldedKeystore: UnshieldedKeystore,
+    private readonly walletSeeds: { shielded: Uint8Array; dust: Uint8Array },
   ) {
     this.wallet = wallet;
     this.unshieldedKeystore = unshieldedKeystore;
@@ -65,7 +66,10 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
 
   async start(): Promise<void> {
     this.logger.info('Starting wallet...');
-    await this.wallet.start(this.zswapSecretKeys as any, this.dustSecretKey as any);
+    await (this.wallet as any).start({
+      shielded: this.walletSeeds.shielded,
+      dust: this.walletSeeds.dust,
+    });
   }
 
   async stop(): Promise<void> {
@@ -78,7 +82,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     secret: WalletSecret,
     opts?: { fastSync?: FastSyncOptions },
   ): Promise<MidnightWalletProvider> {
-    const { facade, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight } =
+    const { facade, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight, walletSeeds } =
       await assembleWallet(logger, env, secret, opts?.fastSync);
 
     const syncInfo = seeded.length > 0
@@ -92,6 +96,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       zswapSecretKeys,
       dustSecretKey,
       keystore,
+      walletSeeds,
     );
   }
 }
