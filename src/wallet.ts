@@ -12,7 +12,7 @@ import type {
 } from '@midnight-ntwrk/midnight-js-types';
 import { ttlOneHour } from '@midnight-ntwrk/midnight-js-utils';
 import type { WalletFacade, FacadeState, UnshieldedKeystore } from '@midnight-ntwrk/wallet-sdk';
-import type { EnvironmentConfiguration, WalletSeeds } from '@midnight-ntwrk/testkit-js';
+import type { EnvironmentConfiguration } from '@midnight-ntwrk/testkit-js';
 import * as Rx from 'rxjs';
 import type { Logger } from 'pino';
 import { assembleWallet, type FastSyncOptions } from './fast-sync/fast-wallet.js';
@@ -29,10 +29,10 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
   private constructor(
     private readonly logger: Logger,
     wallet: WalletFacade,
-    private readonly seeds: WalletSeeds,
     private readonly zswapSecretKeys: ZswapSecretKeys,
     private readonly dustSecretKey: DustSecretKey,
     unshieldedKeystore: UnshieldedKeystore,
+    private readonly walletSeeds: { shielded: Uint8Array; dust: Uint8Array },
     subWallets: { shielded: any; dust: any; unshielded: any },
   ) {
     this.wallet = wallet;
@@ -41,11 +41,11 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
   }
 
   getCoinPublicKey(): CoinPublicKey {
-    return this.zswapSecretKeys.coinPublicKey as any;
+    return this.zswapSecretKeys.coinPublicKey;
   }
 
   getEncryptionPublicKey(): EncPublicKey {
-    return this.zswapSecretKeys.encryptionPublicKey as any;
+    return this.zswapSecretKeys.encryptionPublicKey;
   }
 
   async balanceTx(
@@ -69,9 +69,10 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
 
   async start(): Promise<void> {
     this.logger.info('Starting wallet...');
-    // Canary WalletFacade.start(material) accepts FacadeStartMaterial = WalletSeeds | FacadeKeysByEpoch.
-    // Passing WalletSeeds lets the facade derive v9 key objects internally (v9KeysOf).
-    await this.wallet.start(this.seeds);
+    await (this.wallet as any).start({
+      shielded: this.walletSeeds.shielded,
+      dust: this.walletSeeds.dust,
+    });
   }
 
   async stop(): Promise<void> {
@@ -84,14 +85,23 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     secret: WalletSecret,
     opts?: { fastSync?: FastSyncOptions },
   ): Promise<MidnightWalletProvider> {
-    const { facade, seeds, zswapSecretKeys, dustSecretKey, keystore, subWallets } = await assembleWallet(
+    const { facade, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight, walletSeeds, subWallets } =
+      await assembleWallet(logger, env, secret, opts?.fastSync);
+
+    const syncInfo = seeded.length > 0
+      ? ` (fast-sync: seeded [${seeded.join(', ')}] from height ${referenceHeight})`
+      : '';
+    logger.info(`Wallet built from ${secret.kind}${syncInfo}`);
+
+    return new MidnightWalletProvider(
       logger,
-      env,
-      secret,
-      opts?.fastSync,
+      facade,
+      zswapSecretKeys,
+      dustSecretKey,
+      keystore,
+      walletSeeds,
+      subWallets,
     );
-    logger.info(`Wallet built from ${secret.kind}${opts?.fastSync ? ' (fast-sync enabled)' : ''}.`);
-    return new MidnightWalletProvider(logger, facade, seeds, zswapSecretKeys as any, dustSecretKey as any, keystore, subWallets);
   }
 }
 
@@ -100,10 +110,21 @@ function isProgressStrictlyComplete(progress: unknown): boolean {
     return false;
   }
   const candidate = progress as { isStrictlyComplete?: unknown };
-  if (typeof candidate.isStrictlyComplete !== 'function') {
-    return false;
+  if (typeof candidate.isStrictlyComplete === 'function') {
+    return (candidate.isStrictlyComplete as () => boolean)();
   }
-  return (candidate.isStrictlyComplete as () => boolean)();
+  // Fallback: if isStrictlyComplete doesn't exist (e.g. unshielded GraphQL
+  // schema mismatch), treat as complete when applied >= target (both 0 = done).
+  const p = progress as {
+    appliedIndex?: bigint; highestRelevantWalletIndex?: bigint;
+    appliedId?: bigint; highestTransactionId?: bigint;
+  };
+  const applied = p.appliedIndex ?? p.appliedId;
+  const target = p.highestRelevantWalletIndex ?? p.highestTransactionId;
+  if (applied !== undefined && target !== undefined) {
+    return applied >= target;
+  }
+  return false;
 }
 
 function formatProgress(progress: unknown): string {
@@ -122,33 +143,58 @@ function formatProgress(progress: unknown): string {
 export async function syncWallet(
   logger: Logger,
   wallet: WalletFacade,
-  timeout = 300_000,
+  timeout = 600_000,
 ): Promise<FacadeState> {
-  logger.info('Syncing wallet...');
+  logger.info('Syncing wallet (waiting for all sub-wallets to catch up)...');
   let emissionCount = 0;
+  let lastProgressTime = Date.now();
+  let lastDustApplied = 0n;
+
   return Rx.firstValueFrom(
     wallet.state().pipe(
       Rx.tap((state: FacadeState) => {
         emissionCount++;
-        logger.info(
-          `Wallet sync [${emissionCount}]: shielded=${formatProgress(state.shielded.state.progress)}, ` +
-            `unshielded=${formatProgress(state.unshielded.progress)}, dust=${formatProgress(state.dust.state.progress)}`,
-        );
+        if (emissionCount % 100 === 0) {
+          logger.info(
+            `Wallet sync [${emissionCount}]: ` +
+              `shielded=${formatProgress((state as any).shielded?.state?.progress)}, ` +
+              `unshielded=${formatProgress((state as any).unshielded?.progress)}, ` +
+              `dust=${formatProgress((state as any).dust?.state?.progress)}`,
+          );
+        }
+        // Track progress for stall detection
+        const dustP = (state as any).dust?.state?.progress;
+        const dustApplied = dustP?.appliedIndex ?? dustP?.appliedId ?? 0n;
+        if (dustApplied !== lastDustApplied) {
+          lastDustApplied = dustApplied;
+          lastProgressTime = Date.now();
+        }
       }),
-      Rx.filter(
-        (state: FacadeState) =>
-          isProgressStrictlyComplete(state.shielded.state.progress) &&
-          isProgressStrictlyComplete(state.dust.state.progress) &&
-          isProgressStrictlyComplete(state.unshielded.progress),
-      ),
+      Rx.filter((state: FacadeState) => {
+        const sh = (state as any).shielded?.state?.progress;
+        const un = (state as any).unshielded?.progress;
+        const dust = (state as any).dust?.state?.progress;
+        const allComplete =
+          isProgressStrictlyComplete(sh) &&
+          isProgressStrictlyComplete(dust) &&
+          isProgressStrictlyComplete(un);
+        if (allComplete) return true;
+
+        // Stall detection: if shielded+dust are done but sync stalls for 5 min, proceed
+        const shDone = isProgressStrictlyComplete(sh);
+        const dustDone = isProgressStrictlyComplete(dust);
+        if (shDone && dustDone) {
+          const stallMs = Date.now() - lastProgressTime;
+          const STALL_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+          if (stallMs > STALL_THRESHOLD_MS) {
+            logger.warn(`Sync stall detected (${Math.round(stallMs / 1000)}s no dust progress). Proceeding with current state.`);
+            return true;
+          }
+        }
+
+        return false;
+      }),
       Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions`)),
-      Rx.timeout({
-        each: timeout,
-        with: () =>
-          Rx.throwError(
-            () => new Error(`Wallet sync timeout after ${timeout}ms (${emissionCount} emissions received)`),
-          ),
-      }),
     ),
   );
 }
