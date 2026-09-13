@@ -70,7 +70,8 @@ export async function assembleWallet(
     ? WalletSeeds.fromMnemonic(secret.value)
     : WalletSeeds.fromMasterSeed(secret.value);
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  const keystore = createKeystore(seeds.unshielded as any, networkId);
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const keystore = createKeystore({ kind: 'UnshieldedSecretKey' as any, secret: seeds.unshielded }, networkId);
   const zswapSecretKeys = ZswapSecretKeys.fromSeed(seeds.shielded) as any;
   const dustSecretKey = DustSecretKey.fromSeed(seeds.dust) as any;
   const unshieldedPublicKey = PublicKey.fromKeyStore(keystore);
