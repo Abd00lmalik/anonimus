@@ -91,7 +91,7 @@ function makeDedupingApplyUpdate<
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function dedupingShieldedBuilder(): unknown {
-  return new ShieldedV1Builder().withDefaults().withSync(
+  return (new ShieldedV1Builder().withDefaults().withSync(
     ShieldedSync.makeEventsSyncService as any,
     ((_config: unknown, _getContext: unknown) => {
       const base = ShieldedSync.makeEventsSyncCapability();
@@ -102,11 +102,11 @@ export function dedupingShieldedBuilder(): unknown {
         ),
       };
     }) as any,
-  );
+  ) as any).withStartAuxDefaults();
 }
 
 export function dedupingDustBuilder(): unknown {
-  return new DustV1Builder().withDefaults().withSync(
+  return (new DustV1Builder().withDefaults().withSync(
     DustSyncService.makeDefaultSyncService as any,
     ((_config: unknown, _getContext: unknown) => {
       const base = (DustSyncService.makeDefaultSyncCapability as () => unknown)();
@@ -117,5 +117,5 @@ export function dedupingDustBuilder(): unknown {
         ),
       };
     }) as any,
-  );
+  ) as any).withStartAuxDefaults();
 }
