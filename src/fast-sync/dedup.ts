@@ -19,13 +19,13 @@
 import {
   CoreWallet as ShieldedCoreWallet,
   Sync as ShieldedSync,
-  V1Builder as ShieldedV1Builder,
-} from '@midnight-ntwrk/wallet-sdk/shielded/v1';
+  V2Builder as ShieldedV2Builder,
+} from '@midnight-ntwrk/wallet-sdk/shielded/v2';
 import {
   CoreWallet as DustCoreWallet,
   SyncService as DustSyncService,
-  V1Builder as DustV1Builder,
-} from '@midnight-ntwrk/wallet-sdk/dust/v1';
+  V2Builder as DustV2Builder,
+} from '@midnight-ntwrk/wallet-sdk/dust/v2';
 
 type Updateish<T = unknown> = {
   readonly id: number | bigint | string;
@@ -91,7 +91,7 @@ function makeDedupingApplyUpdate<
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function dedupingShieldedBuilder(): unknown {
-  return (new ShieldedV1Builder().withDefaults().withSync(
+  return (new ShieldedV2Builder().withDefaults().withSync(
     ShieldedSync.makeEventsSyncService as any,
     ((_config: unknown, _getContext: unknown) => {
       const base = ShieldedSync.makeEventsSyncCapability();
@@ -106,7 +106,7 @@ export function dedupingShieldedBuilder(): unknown {
 }
 
 export function dedupingDustBuilder(): unknown {
-  return (new DustV1Builder().withDefaults().withSync(
+  return (new DustV2Builder().withDefaults().withSync(
     DustSyncService.makeDefaultSyncService as any,
     ((_config: unknown, _getContext: unknown) => {
       const base = (DustSyncService.makeDefaultSyncCapability as () => unknown)();
