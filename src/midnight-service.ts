@@ -86,6 +86,7 @@ export class MidnightService {
     this.logger.info(`[MidnightService] Network: ${config.networkId}`);
 
     const secret: WalletSecret = { kind: 'mnemonic', value: WALLET_SEED };
+    const fastSyncRoot = process.env['FAST_SYNC_REFERENCE_ROOT'];
     this.wallet = await MidnightWalletProvider.build(
       this.logger as any,
       {
@@ -99,6 +100,7 @@ export class MidnightService {
         proofServer: config.proofServer,
       },
       secret,
+      fastSyncRoot ? { fastSync: { referenceRoot: fastSyncRoot } } : undefined,
     );
     await this.wallet.start();
     await syncWallet(this.logger as any, this.wallet.wallet);
