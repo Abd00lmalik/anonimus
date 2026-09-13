@@ -110,10 +110,21 @@ function isProgressStrictlyComplete(progress: unknown): boolean {
     return false;
   }
   const candidate = progress as { isStrictlyComplete?: unknown };
-  if (typeof candidate.isStrictlyComplete !== 'function') {
-    return false;
+  if (typeof candidate.isStrictlyComplete === 'function') {
+    return (candidate.isStrictlyComplete as () => boolean)();
   }
-  return (candidate.isStrictlyComplete as () => boolean)();
+  // Fallback: if isStrictlyComplete doesn't exist (e.g. unshielded GraphQL
+  // schema mismatch), treat as complete when applied >= target (both 0 = done).
+  const p = progress as {
+    appliedIndex?: bigint; highestRelevantWalletIndex?: bigint;
+    appliedId?: bigint; highestTransactionId?: bigint;
+  };
+  const applied = p.appliedIndex ?? p.appliedId;
+  const target = p.highestRelevantWalletIndex ?? p.highestTransactionId;
+  if (applied !== undefined && target !== undefined) {
+    return applied >= target;
+  }
+  return false;
 }
 
 function formatProgress(progress: unknown): string {
