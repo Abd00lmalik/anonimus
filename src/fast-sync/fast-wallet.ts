@@ -16,6 +16,9 @@ import { DustWallet } from '@midnight-ntwrk/wallet-sdk/dust';
 import { createKeystore, PublicKey, UnshieldedWallet } from '@midnight-ntwrk/wallet-sdk/unshielded';
 import { type EnvironmentConfiguration, WalletSeeds } from '@midnight-ntwrk/testkit-js';
 import type { Logger } from 'pino';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { gzipSync, gunzipSync } from 'node:zlib';
+import { join } from 'node:path';
 import type { WalletSecret } from '../wallet.js';
 import { isSeedable, preSeedNewWallet } from './preseed.js';
 import { loadReferenceBundle } from './reference-bundle.js';
@@ -33,23 +36,136 @@ export interface AssembledWallet {
   seeded: string[];
   referenceHeight: number | null;
   walletSeeds: { shielded: Uint8Array; dust: Uint8Array };
+  /** Raw sub-wallet instances for serialization (saveWalletState) */
+  subWallets: { shielded: any; dust: any; unshielded: any };
 }
 
-export async function getChainTipHeight(indexerHttpUrl: string): Promise<number | undefined> {
-  try {
-    const res = await fetch(indexerHttpUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ query: 'query { block { height } }' }),
-    });
-    if (!res.ok) return undefined;
-    const json = (await res.json()) as { data?: { block?: { height?: number } | null } };
-    const height = json.data?.block?.height;
-    return typeof height === 'number' && height > 0 ? height : undefined;
-  } catch {
-    return undefined;
-  }
+const SAVED_STATE_DIR = '/opt/anonimus/wallet-state';
+const SAVED_STATE_MANIFEST = join(SAVED_STATE_DIR, 'manifest.json');
+
+export interface SavedWalletState {
+  shielded: string;
+  dust: string;
+  unshielded: string;
+  height: number;
+  savedAt: string;
 }
+
+export function getChainTipHeight(indexerHttpUrl: string): Promise<number | undefined> {
+  return fetch(indexerHttpUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'query { block { height } }' }),
+  })
+    .then((res) => (res.ok ? res.json() : undefined))
+    .then((json: any) => {
+      const height = json?.data?.block?.height;
+      return typeof height === 'number' && height > 0 ? height : undefined;
+    })
+    .catch(() => undefined);
+}
+
+// ── Save / Load wallet state ───────────────────────────────────────────
+
+function ensureDir(dir: string) {
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+}
+
+function compress(data: string): Buffer {
+  return gzipSync(Buffer.from(data, 'utf-8'));
+}
+
+function decompress(buf: Buffer): string {
+  return gunzipSync(buf).toString('utf-8');
+}
+
+function saveSubWallet(dir: string, name: string, serialized: string): void {
+  ensureDir(dir);
+  const buf = compress(serialized);
+  const tmpPath = join(dir, `${name}.tmp`);
+  const finalPath = join(dir, `${name}.gz`);
+  writeFileSync(tmpPath, buf);
+  // Atomic rename
+  const { renameSync } = require('node:fs');
+  renameSync(tmpPath, finalPath);
+}
+
+/**
+ * Save all three sub-wallet serialized states as gzipped files.
+ * Called after sync completes so future restarts can use restore() instead of startWithSeed().
+ */
+export async function saveWalletState(
+  shielded: any,
+  dust: any,
+  unshielded: any,
+  height: number,
+  logger?: Logger,
+): Promise<void> {
+  ensureDir(SAVED_STATE_DIR);
+
+  logger?.info(`[FastSync] Serializing wallet state at height ${height}...`);
+  const [shSerialized, duSerialized, unSerialized] = await Promise.all([
+    shielded.serializeState(),
+    dust.serializeState(),
+    unshielded.serializeState(),
+  ]);
+
+  saveSubWallet(SAVED_STATE_DIR, 'shielded', shSerialized);
+  saveSubWallet(SAVED_STATE_DIR, 'dust', duSerialized);
+  saveSubWallet(SAVED_STATE_DIR, 'unshielded', unSerialized);
+
+  const manifest: SavedWalletState = {
+    shielded: `${shSerialized.length} chars`,
+    dust: `${duSerialized.length} chars`,
+    unshielded: `${unSerialized.length} chars`,
+    height,
+    savedAt: new Date().toISOString(),
+  };
+  writeFileSync(SAVED_STATE_MANIFEST, JSON.stringify(manifest, null, 2));
+
+  logger?.info(`[FastSync] Wallet state saved at height ${height} to ${SAVED_STATE_DIR}`);
+}
+
+/**
+ * Load a previously saved sub-wallet state from gzipped file.
+ * Returns null if file doesn't exist.
+ */
+function loadSubWallet(dir: string, name: string): string | null {
+  const path = join(dir, `${name}.gz`);
+  if (!existsSync(path)) return null;
+  return decompress(readFileSync(path));
+}
+
+export function hasSavedState(): boolean {
+  return existsSync(SAVED_STATE_MANIFEST);
+}
+
+/**
+ * Load all three saved sub-wallet states.
+ * Returns null if any file is missing.
+ */
+export function loadSavedState(logger?: Logger): SavedWalletState | null {
+  if (!existsSync(SAVED_STATE_MANIFEST)) return null;
+
+  const shielded = loadSubWallet(SAVED_STATE_DIR, 'shielded');
+  const dust = loadSubWallet(SAVED_STATE_DIR, 'dust');
+  const unshielded = loadSubWallet(SAVED_STATE_DIR, 'unshielded');
+
+  if (!shielded || !dust || !unshielded) {
+    logger?.warn('[FastSync] Incomplete saved state — missing files');
+    return null;
+  }
+
+  const manifest: SavedWalletState = JSON.parse(readFileSync(SAVED_STATE_MANIFEST, 'utf-8'));
+  manifest.shielded = shielded;
+  manifest.dust = dust;
+  manifest.unshielded = unshielded;
+
+  logger?.info(`[FastSync] Loaded saved state from height ${manifest.height}`);
+  return manifest;
+}
+
+// ── Main wallet assembly ───────────────────────────────────────────────
 
 export async function assembleWallet(
   logger: Logger,
@@ -89,6 +205,35 @@ export async function assembleWallet(
     },
   };
 
+  // ── Path A: Restore from saved state (fast, ~2 min catch-up) ────────
+  const saved = loadSavedState(logger);
+  if (saved) {
+    logger.info('[FastSync] Restoring from saved wallet state...');
+    const shielded = await ShieldedWallet(config).restore(saved.shielded);
+    const unshielded = await UnshieldedWallet(config).restore(saved.unshielded);
+    const dust = await DustWallet(dustConfig).restore(saved.dust);
+
+    const facade = await WalletFacade.init({
+      configuration: config,
+      shielded: () => shielded,
+      unshielded: () => unshielded,
+      dust: () => dust,
+    });
+
+    logger.info(`[FastSync] Restored from saved state at height ${saved.height} — sub-wallets will catch up from there.`);
+    return {
+      facade,
+      zswapSecretKeys,
+      dustSecretKey,
+      keystore,
+      seeded: ['shielded', 'dust', 'unshielded'],
+      referenceHeight: saved.height,
+      walletSeeds: { shielded: seeds.shielded, dust: seeds.dust },
+      subWallets: { shielded, dust, unshielded },
+    };
+  }
+
+  // ── Path B: Preseed from reference bundle (medium, ~2 min) ──────────
   let seededSnaps: ReturnType<typeof preSeedNewWallet> = null;
   let referenceHeight: number | null = null;
 
@@ -113,19 +258,20 @@ export async function assembleWallet(
     }
   }
 
+  // ── Path C: Start from genesis (slow, ~2-3 hrs) ─────────────────────
   const Shielded = ShieldedWallet(config);
   const shielded = seededSnaps?.shielded
-    ? Shielded.restore(seededSnaps.shielded)
-    : Shielded.startWithSeed(seeds.shielded);
+    ? await Shielded.restore(seededSnaps.shielded)
+    : await Shielded.startWithSeed(seeds.shielded);
 
   const unshielded = seededSnaps?.unshielded
-    ? UnshieldedWallet(config).restore(seededSnaps.unshielded)
-    : UnshieldedWallet(config).startWithPublicKey(unshieldedPublicKey);
+    ? await UnshieldedWallet(config).restore(seededSnaps.unshielded)
+    : await UnshieldedWallet(config).startWithPublicKey(unshieldedPublicKey);
 
   const Dust = DustWallet(dustConfig);
   const dust = seededSnaps?.dust
-    ? Dust.restore(seededSnaps.dust)
-    : Dust.startWithSeed(seeds.dust, LedgerParameters.initialParameters().dust);
+    ? await Dust.restore(seededSnaps.dust)
+    : await Dust.startWithSeed(seeds.dust, LedgerParameters.initialParameters().dust);
 
   const facade = await WalletFacade.init({
     configuration: config,
@@ -150,5 +296,6 @@ export async function assembleWallet(
     seeded,
     referenceHeight,
     walletSeeds: { shielded: seeds.shielded, dust: seeds.dust },
+    subWallets: { shielded, dust, unshielded },
   };
 }

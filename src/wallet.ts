@@ -24,6 +24,7 @@ export type WalletSecret =
 export class MidnightWalletProvider implements MidnightProvider, WalletProvider {
   readonly wallet: WalletFacade;
   readonly unshieldedKeystore: UnshieldedKeystore;
+  readonly subWallets: { shielded: any; dust: any; unshielded: any };
 
   private constructor(
     private readonly logger: Logger,
@@ -32,9 +33,11 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     private readonly dustSecretKey: DustSecretKey,
     unshieldedKeystore: UnshieldedKeystore,
     private readonly walletSeeds: { shielded: Uint8Array; dust: Uint8Array },
+    subWallets: { shielded: any; dust: any; unshielded: any },
   ) {
     this.wallet = wallet;
     this.unshieldedKeystore = unshieldedKeystore;
+    this.subWallets = subWallets;
   }
 
   getCoinPublicKey(): CoinPublicKey {
@@ -82,7 +85,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     secret: WalletSecret,
     opts?: { fastSync?: FastSyncOptions },
   ): Promise<MidnightWalletProvider> {
-    const { facade, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight, walletSeeds } =
+    const { facade, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight, walletSeeds, subWallets } =
       await assembleWallet(logger, env, secret, opts?.fastSync);
 
     const syncInfo = seeded.length > 0
@@ -97,6 +100,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       dustSecretKey,
       keystore,
       walletSeeds,
+      subWallets,
     );
   }
 }

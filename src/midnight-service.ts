@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto';
 import { getConfig, type NetworkConfig } from './config.js';
 import { MidnightWalletProvider, syncWallet, type WalletSecret } from './wallet.js';
 import { buildProviders, type PohProviders } from './providers.js';
+import { saveWalletState, getChainTipHeight } from './fast-sync/fast-wallet.js';
 import {
   CompiledPohCoreContract,
   Contract,
@@ -105,6 +106,21 @@ export class MidnightService {
     await this.wallet.start();
     await syncWallet(this.logger as any, this.wallet.wallet);
     this.logger.info('[MidnightService] Wallet synced.');
+
+    // Auto-save wallet state for future fast-sync restarts
+    try {
+      const tipHeight = await getChainTipHeight(config.indexer) ?? 0;
+      await saveWalletState(
+        this.wallet.subWallets.shielded,
+        this.wallet.subWallets.dust,
+        this.wallet.subWallets.unshielded,
+        tipHeight,
+        this.logger as any,
+      );
+      this.logger.info(`[MidnightService] Wallet state saved at height ${tipHeight} for fast-sync.`);
+    } catch (err: any) {
+      this.logger.warn(`[MidnightService] Failed to save wallet state: ${err.message} — will re-sync from genesis next restart.`);
+    }
 
     // Build providers (proof server, indexer, private state, etc.)
     this.providers = buildProviders(
