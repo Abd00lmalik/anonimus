@@ -31,6 +31,7 @@ export interface FastSyncOptions {
 
 export interface AssembledWallet {
   facade: WalletFacade;
+  seeds: WalletSeeds;
   zswapSecretKeys: ZswapSecretKeys;
   dustSecretKey: DustSecretKey;
   keystore: UnshieldedKeystore;
@@ -218,6 +219,7 @@ export async function assembleWallet(
     logger.info(`[FastSync] Restored from saved state at height ${saved.height} — sub-wallets will catch up from there.`);
     return {
       facade,
+      seeds,
       zswapSecretKeys,
       dustSecretKey,
       keystore,
@@ -290,5 +292,5 @@ export async function assembleWallet(
     logger.info(`Fast-sync: seeded [${seeded.join(', ')}] from reference at height ${referenceHeight} — sub-wallets start near tip.`);
   }
 
-  return { facade, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight, subWallets: { shielded, dust, unshielded } };
+  return { facade, seeds, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight, subWallets: { shielded, dust, unshielded } };
 }

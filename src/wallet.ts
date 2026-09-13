@@ -12,7 +12,7 @@ import type {
 } from '@midnight-ntwrk/midnight-js-types';
 import { ttlOneHour } from '@midnight-ntwrk/midnight-js-utils';
 import type { WalletFacade, FacadeState, UnshieldedKeystore } from '@midnight-ntwrk/wallet-sdk';
-import type { EnvironmentConfiguration } from '@midnight-ntwrk/testkit-js';
+import type { EnvironmentConfiguration, WalletSeeds } from '@midnight-ntwrk/testkit-js';
 import * as Rx from 'rxjs';
 import type { Logger } from 'pino';
 import { assembleWallet, type FastSyncOptions } from './fast-sync/fast-wallet.js';
@@ -29,6 +29,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
   private constructor(
     private readonly logger: Logger,
     wallet: WalletFacade,
+    private readonly seeds: WalletSeeds,
     private readonly zswapSecretKeys: ZswapSecretKeys,
     private readonly dustSecretKey: DustSecretKey,
     unshieldedKeystore: UnshieldedKeystore,
@@ -68,10 +69,9 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
 
   async start(): Promise<void> {
     this.logger.info('Starting wallet...');
-    // Official pattern from example-hello-world: pass key objects directly.
-    // The facade's start() accepts FacadeStartMaterial = WalletSeeds | FacadeKeysByEpoch.
-    // At runtime, passing (ZswapSecretKeys, DustSecretKey) works via the WASM layer.
-    await (this.wallet as any).start(this.zswapSecretKeys, this.dustSecretKey);
+    // Canary WalletFacade.start(material) accepts FacadeStartMaterial = WalletSeeds | FacadeKeysByEpoch.
+    // Passing WalletSeeds lets the facade derive v9 key objects internally (v9KeysOf).
+    await this.wallet.start(this.seeds);
   }
 
   async stop(): Promise<void> {
@@ -84,14 +84,14 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     secret: WalletSecret,
     opts?: { fastSync?: FastSyncOptions },
   ): Promise<MidnightWalletProvider> {
-    const { facade, zswapSecretKeys, dustSecretKey, keystore, subWallets } = await assembleWallet(
+    const { facade, seeds, zswapSecretKeys, dustSecretKey, keystore, subWallets } = await assembleWallet(
       logger,
       env,
       secret,
       opts?.fastSync,
     );
     logger.info(`Wallet built from ${secret.kind}${opts?.fastSync ? ' (fast-sync enabled)' : ''}.`);
-    return new MidnightWalletProvider(logger, facade, zswapSecretKeys as any, dustSecretKey as any, keystore, subWallets);
+    return new MidnightWalletProvider(logger, facade, seeds, zswapSecretKeys as any, dustSecretKey as any, keystore, subWallets);
   }
 }
 
