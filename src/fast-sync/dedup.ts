@@ -1,3 +1,21 @@
+// Client-side workaround for an off-by-one in the shielded and dust wallet
+// sync pipelines. Ported verbatim from moth-wallet's
+// packages/core/src/sync/sdk-dedup.ts (only the package scope changed).
+//
+// The SDKs' default applyUpdate early-skips only when the LAST event in a batch
+// is already applied. When the indexer re-sends a boundary event (subscription
+// reconnect, keepalive race) at the head of an otherwise-fresh batch, the
+// duplicate slips through to the WASM tree:
+//
+//   Error: values inserted non-linearly into zswap commitment tree;
+//          expected to insert index N+1, but received N.
+//
+// A restored wallet catching up from a reference cursor streams exactly the
+// events most likely to hit this on a reconnect, so the fix matters here even
+// more than on a genesis sync. We filter the batch BEFORE replay, dropping any
+// event with id <= appliedIndex, and wrap rather than fork via the documented
+// V1Builder.withSync extension point.
+
 import {
   CoreWallet as ShieldedCoreWallet,
   Sync as ShieldedSync,
@@ -51,8 +69,13 @@ function makeDedupingApplyUpdate<
     if (wrapped.updates.length === 0) {
       return base.applyUpdate(state, wrapped);
     }
+
     const { fresh, droppedCount } = partitionByAppliedIndex(wrapped.updates, state.progress.appliedIndex);
-    if (droppedCount === 0) return base.applyUpdate(state, wrapped);
+
+    if (droppedCount === 0) {
+      return base.applyUpdate(state, wrapped);
+    }
+
     if (fresh.length === 0) {
       const tail = wrapped.updates[wrapped.updates.length - 1]!;
       const highestRelevantWalletIndex = BigInt(tail.maxId);
@@ -61,6 +84,7 @@ function makeDedupingApplyUpdate<
         { changes: [], protocolVersion: Number(state.protocolVersion) },
       ] as const;
     }
+
     return base.applyUpdate(state, { ...wrapped, updates: fresh });
   };
 }

@@ -11,8 +11,8 @@ import {
   WalletEntrySchema,
   WalletFacade,
 } from '@midnight-ntwrk/wallet-sdk';
-import { ShieldedWallet, V9_NATIVE_FORK_VERSION } from '@midnight-ntwrk/wallet-sdk/shielded';
-import { DustWallet } from '@midnight-ntwrk/wallet-sdk/dust';
+import { CustomShieldedWallet } from '@midnight-ntwrk/wallet-sdk/shielded';
+import { CustomDustWallet } from '@midnight-ntwrk/wallet-sdk/dust';
 import { createKeystore, PublicKey, UnshieldedWallet } from '@midnight-ntwrk/wallet-sdk/unshielded';
 import { type EnvironmentConfiguration, WalletSeeds } from '@midnight-ntwrk/testkit-js';
 import type { Logger } from 'pino';
@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import type { WalletSecret } from '../wallet.js';
+import { dedupingDustBuilder, dedupingShieldedBuilder } from './dedup.js';
 import { isSeedable, preSeedNewWallet } from './preseed.js';
 import { loadReferenceBundle } from './reference-bundle.js';
 
@@ -30,12 +31,11 @@ export interface FastSyncOptions {
 
 export interface AssembledWallet {
   facade: WalletFacade;
-  zswapSecretKeys: any;
-  dustSecretKey: any;
+  zswapSecretKeys: ZswapSecretKeys;
+  dustSecretKey: DustSecretKey;
   keystore: UnshieldedKeystore;
   seeded: string[];
   referenceHeight: number | null;
-  walletSeeds: { shielded: Uint8Array; dust: Uint8Array };
   /** Raw sub-wallet instances for serialization (saveWalletState) */
   subWallets: { shielded: any; dust: any; unshielded: any };
 }
@@ -79,17 +79,6 @@ function decompress(buf: Buffer): string {
   return gunzipSync(buf).toString('utf-8');
 }
 
-function saveSubWallet(dir: string, name: string, serialized: string): void {
-  ensureDir(dir);
-  const buf = compress(serialized);
-  const tmpPath = join(dir, `${name}.tmp`);
-  const finalPath = join(dir, `${name}.gz`);
-  writeFileSync(tmpPath, buf);
-  // Atomic rename
-  const { renameSync } = require('node:fs');
-  renameSync(tmpPath, finalPath);
-}
-
 /**
  * Save all three sub-wallet serialized states as gzipped files.
  * Called after sync completes so future restarts can use restore() instead of startWithSeed().
@@ -110,9 +99,18 @@ export async function saveWalletState(
     unshielded.serializeState(),
   ]);
 
-  saveSubWallet(SAVED_STATE_DIR, 'shielded', shSerialized);
-  saveSubWallet(SAVED_STATE_DIR, 'dust', duSerialized);
-  saveSubWallet(SAVED_STATE_DIR, 'unshielded', unSerialized);
+  const tmpShielded = join(SAVED_STATE_DIR, 'shielded.tmp');
+  const tmpDust = join(SAVED_STATE_DIR, 'dust.tmp');
+  const tmpUnshielded = join(SAVED_STATE_DIR, 'unshielded.tmp');
+
+  writeFileSync(tmpShielded, compress(shSerialized));
+  writeFileSync(tmpDust, compress(duSerialized));
+  writeFileSync(tmpUnshielded, compress(unSerialized));
+
+  const { renameSync } = await import('node:fs');
+  renameSync(tmpShielded, join(SAVED_STATE_DIR, 'shielded.gz'));
+  renameSync(tmpDust, join(SAVED_STATE_DIR, 'dust.gz'));
+  renameSync(tmpUnshielded, join(SAVED_STATE_DIR, 'unshielded.gz'));
 
   const manifest: SavedWalletState = {
     shielded: `${shSerialized.length} chars`,
@@ -126,10 +124,6 @@ export async function saveWalletState(
   logger?.info(`[FastSync] Wallet state saved at height ${height} to ${SAVED_STATE_DIR}`);
 }
 
-/**
- * Load a previously saved sub-wallet state from gzipped file.
- * Returns null if file doesn't exist.
- */
 function loadSubWallet(dir: string, name: string): string | null {
   const path = join(dir, `${name}.gz`);
   if (!existsSync(path)) return null;
@@ -140,10 +134,6 @@ export function hasSavedState(): boolean {
   return existsSync(SAVED_STATE_MANIFEST);
 }
 
-/**
- * Load all three saved sub-wallet states.
- * Returns null if any file is missing.
- */
 export function loadSavedState(logger?: Logger): SavedWalletState | null {
   if (!existsSync(SAVED_STATE_MANIFEST)) return null;
 
@@ -165,7 +155,7 @@ export function loadSavedState(logger?: Logger): SavedWalletState | null {
   return manifest;
 }
 
-// ── Main wallet assembly ───────────────────────────────────────────────
+// ── Main wallet assembly (mirrors example-hello-world exactly) ─────────
 
 export async function assembleWallet(
   logger: Logger,
@@ -181,21 +171,19 @@ export async function assembleWallet(
     : WalletSeeds.fromMasterSeed(secret.value);
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  const keystore = createKeystore({ kind: 'schnorr', secret: seeds.unshielded } as any, networkId);
-  const zswapSecretKeys = ZswapSecretKeys.fromSeed(seeds.shielded) as any;
-  const dustSecretKey = DustSecretKey.fromSeed(seeds.dust) as any;
+  const keystore = createKeystore(seeds.unshielded as any, networkId);
+  const zswapSecretKeys = ZswapSecretKeys.fromSeed(seeds.shielded);
+  const dustSecretKey = DustSecretKey.fromSeed(seeds.dust);
   const unshieldedPublicKey = PublicKey.fromKeyStore(keystore);
 
   const config = {
-    networkId,
-    forks: { v9: V9_NATIVE_FORK_VERSION },
     indexerClientConnection: { indexerHttpUrl: env.indexer, indexerWsUrl: env.indexerWS },
     provingServerUrl: new URL(env.proofServer),
+    networkId,
     relayURL: new URL(env.nodeWS),
     txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
-    costParameters: { additionalFeeOverhead: 1_000n, feeBlocksMargin: 5 },
+    costParameters: { feeBlocksMargin: 5 },
   };
-
   const dustConfig = {
     ...config,
     costParameters: {
@@ -205,13 +193,20 @@ export async function assembleWallet(
     },
   };
 
-  // ── Path A: Restore from saved state (fast, ~2 min catch-up) ────────
+  // ── Path A: Restore from saved state ─────────────────────────────────
   const saved = loadSavedState(logger);
   if (saved) {
     logger.info('[FastSync] Restoring from saved wallet state...');
-    const shielded = await ShieldedWallet(config).restore(saved.shielded);
-    const unshielded = await UnshieldedWallet(config).restore(saved.unshielded);
-    const dust = await DustWallet(dustConfig).restore(saved.dust);
+    const shieldedBuilder = dedupingShieldedBuilder() as any;
+    const dustBuilder = dedupingDustBuilder() as any;
+
+    const shielded = await CustomShieldedWallet(config, shieldedBuilder).restore(saved.shielded);
+    const unshielded = await (UnshieldedWallet as any)({
+      ...config,
+      forks: { v9: 2_000_000n },
+      txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
+    }).restore(saved.unshielded);
+    const dust = await CustomDustWallet(dustConfig, dustBuilder).restore(saved.dust);
 
     const facade = await WalletFacade.init({
       configuration: config,
@@ -228,12 +223,11 @@ export async function assembleWallet(
       keystore,
       seeded: ['shielded', 'dust', 'unshielded'],
       referenceHeight: saved.height,
-      walletSeeds: { shielded: seeds.shielded, dust: seeds.dust },
       subWallets: { shielded, dust, unshielded },
     };
   }
 
-  // ── Path B: Preseed from reference bundle (medium, ~2 min) ──────────
+  // ── Path B: Preseed from reference bundle ─────────────────────────────
   let seededSnaps: ReturnType<typeof preSeedNewWallet> = null;
   let referenceHeight: number | null = null;
 
@@ -258,20 +252,28 @@ export async function assembleWallet(
     }
   }
 
-  // ── Path C: Start from genesis (slow, ~2-3 hrs) ─────────────────────
-  const Shielded = ShieldedWallet(config);
+  // ── Path C: Build sub-wallets (restore where seeded, start otherwise) ─
+  const shieldedBuilder = dedupingShieldedBuilder() as any;
   const shielded = seededSnaps?.shielded
-    ? await Shielded.restore(seededSnaps.shielded)
-    : await Shielded.startWithSeed(seeds.shielded);
+    ? await CustomShieldedWallet(config, shieldedBuilder).restore(seededSnaps.shielded)
+    : await CustomShieldedWallet(config, shieldedBuilder).startWithSecretKeys(zswapSecretKeys);
 
+  const unshieldedCfg = {
+    ...config,
+    forks: { v9: 2_000_000n },
+    txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
+  } as any;
   const unshielded = seededSnaps?.unshielded
-    ? await UnshieldedWallet(config).restore(seededSnaps.unshielded)
-    : await UnshieldedWallet(config).startWithPublicKey(unshieldedPublicKey);
+    ? await (UnshieldedWallet as any)(unshieldedCfg).restore(seededSnaps.unshielded)
+    : await (UnshieldedWallet as any)(unshieldedCfg).startWithPublicKey(unshieldedPublicKey);
 
-  const Dust = DustWallet(dustConfig);
+  const dustBuilder = dedupingDustBuilder() as any;
   const dust = seededSnaps?.dust
-    ? await Dust.restore(seededSnaps.dust)
-    : await Dust.startWithSeed(seeds.dust, LedgerParameters.initialParameters().dust);
+    ? await CustomDustWallet(dustConfig, dustBuilder).restore(seededSnaps.dust)
+    : await CustomDustWallet(dustConfig, dustBuilder).startWithSecretKey(
+        dustSecretKey,
+        LedgerParameters.initialParameters().dust,
+      );
 
   const facade = await WalletFacade.init({
     configuration: config,
@@ -288,14 +290,5 @@ export async function assembleWallet(
     logger.info(`Fast-sync: seeded [${seeded.join(', ')}] from reference at height ${referenceHeight} — sub-wallets start near tip.`);
   }
 
-  return {
-    facade,
-    zswapSecretKeys,
-    dustSecretKey,
-    keystore,
-    seeded,
-    referenceHeight,
-    walletSeeds: { shielded: seeds.shielded, dust: seeds.dust },
-    subWallets: { shielded, dust, unshielded },
-  };
+  return { facade, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight, subWallets: { shielded, dust, unshielded } };
 }
