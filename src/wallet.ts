@@ -147,6 +147,8 @@ export async function syncWallet(
 ): Promise<FacadeState> {
   logger.info('Syncing wallet (waiting for all sub-wallets to catch up)...');
   let emissionCount = 0;
+  let lastProgressTime = Date.now();
+  let lastDustApplied = 0n;
 
   return Rx.firstValueFrom(
     wallet.state().pipe(
@@ -160,16 +162,37 @@ export async function syncWallet(
               `dust=${formatProgress((state as any).dust?.state?.progress)}`,
           );
         }
+        // Track progress for stall detection
+        const dustP = (state as any).dust?.state?.progress;
+        const dustApplied = dustP?.appliedIndex ?? dustP?.appliedId ?? 0n;
+        if (dustApplied !== lastDustApplied) {
+          lastDustApplied = dustApplied;
+          lastProgressTime = Date.now();
+        }
       }),
       Rx.filter((state: FacadeState) => {
         const sh = (state as any).shielded?.state?.progress;
         const un = (state as any).unshielded?.progress;
         const dust = (state as any).dust?.state?.progress;
-        return (
+        const allComplete =
           isProgressStrictlyComplete(sh) &&
           isProgressStrictlyComplete(dust) &&
-          isProgressStrictlyComplete(un)
-        );
+          isProgressStrictlyComplete(un);
+        if (allComplete) return true;
+
+        // Stall detection: if shielded+dust are done but sync stalls for 5 min, proceed
+        const shDone = isProgressStrictlyComplete(sh);
+        const dustDone = isProgressStrictlyComplete(dust);
+        if (shDone && dustDone) {
+          const stallMs = Date.now() - lastProgressTime;
+          const STALL_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+          if (stallMs > STALL_THRESHOLD_MS) {
+            logger.warn(`Sync stall detected (${Math.round(stallMs / 1000)}s no dust progress). Proceeding with current state.`);
+            return true;
+          }
+        }
+
+        return false;
       }),
       Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions`)),
     ),
