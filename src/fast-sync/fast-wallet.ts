@@ -16,7 +16,7 @@ import { DustWallet } from '@midnight-ntwrk/wallet-sdk/dust';
 import { createKeystore, PublicKey, UnshieldedWallet } from '@midnight-ntwrk/wallet-sdk/unshielded';
 import { type EnvironmentConfiguration, WalletSeeds } from '@midnight-ntwrk/testkit-js';
 import type { Logger } from 'pino';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import type { WalletSecret } from '../wallet.js';
@@ -86,7 +86,6 @@ function saveSubWallet(dir: string, name: string, serialized: string): void {
   const finalPath = join(dir, `${name}.gz`);
   writeFileSync(tmpPath, buf);
   // Atomic rename
-  const { renameSync } = require('node:fs');
   renameSync(tmpPath, finalPath);
 }
 
