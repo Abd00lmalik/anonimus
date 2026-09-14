@@ -6,8 +6,10 @@ import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import {
   deployContract,
   submitCallTx,
+  createUnprovenCallTx,
 } from '@midnight-ntwrk/midnight-js-contracts';
 import type { ContractAddress } from '@midnight-ntwrk/midnight-js-protocol/compact-runtime';
+import { toHex } from '@midnight-ntwrk/midnight-js-utils';
 import crypto from 'node:crypto';
 import { createHash } from 'node:crypto';
 
@@ -44,9 +46,13 @@ import { setVerifier } from './attestation-service.js';
 // a single registration request. They are never stored or returned.
 // ============================================================================
 
-const WALLET_SEED = process.env['DEPLOYER_WALLET_SECRET'] ?? '';
-if (!WALLET_SEED) {
-  throw new Error('DEPLOYER_WALLET_SECRET env var is required');
+// Lazy validation — don't crash at module import time
+function getDeployerSeed(): string {
+  const seed = process.env['DEPLOYER_WALLET_SECRET'] ?? '';
+  if (!seed) {
+    throw new Error('DEPLOYER_WALLET_SECRET env var is required');
+  }
+  return seed;
 }
 
 export interface MidnightRegistrationResult {
@@ -54,6 +60,32 @@ export interface MidnightRegistrationResult {
   nullifier: string;
   commitmentRef: string;
   expiresAt: string;
+}
+
+/**
+ * Result of creating an unsigned registration transaction.
+ * The participant's wallet will prove, balance, sign, and submit this.
+ */
+export interface UnsignedRegistrationResult {
+  /** Hex-encoded unsigned enrollment transaction */
+  enrollmentTx: string;
+  /** Hex-encoded unsigned verification transaction */
+  verificationTx: string;
+  /** Attestation data needed for the ZK proof */
+  attestation: {
+    announcement: { x: string; y: string };
+    response: string;
+  };
+  /** Verifier's public key (Jubjub point) */
+  verifierVk: { x: string; y: string };
+  /** Credential ID (hex) */
+  credId: string;
+  /** Commitment (hex) */
+  commitment: string;
+  /** Expiry timestamp (ISO) */
+  expiresAt: string;
+  /** Nullifier (hex) - for duplicate detection */
+  nullifier: string;
 }
 
 export class MidnightService {
@@ -86,7 +118,7 @@ export class MidnightService {
     setNetworkId(config.networkId);
     this.logger.info(`[MidnightService] Network: ${config.networkId}`);
 
-    const secret: WalletSecret = { kind: 'mnemonic', value: WALLET_SEED };
+    const secret: WalletSecret = { kind: 'mnemonic', value: getDeployerSeed() };
     const fastSyncRoot = process.env['FAST_SYNC_REFERENCE_ROOT'];
     this.wallet = await MidnightWalletProvider.build(
       this.logger as any,
@@ -127,7 +159,7 @@ export class MidnightService {
       this.wallet,
       zkConfigPath,
       config,
-      `poh-service-${Date.now()}`,
+      `poh-service-${config.networkId}`,
     );
     this.logger.info('[MidnightService] Providers initialized.');
 
@@ -329,7 +361,7 @@ export class MidnightService {
       expiresAt,
     };
     await this._setPrivateState('poh-user-state', userState);
-    await submitCallTx<Contract, 'verifyPersonhood'>(this.providers, {
+    const verifyResult = await submitCallTx<Contract, 'verifyPersonhood'>(this.providers, {
       compiledContract: CompiledPohCoreContract,
       contractAddress: this.contractAddress,
       privateStateId: 'poh-user-state',
@@ -339,13 +371,143 @@ export class MidnightService {
 
     // Compute nullifier off-chain (matches circuit's persistentHash)
     const nullifier = this._computeNullifier(campaignId, credSecret);
+    const txHash = (verifyResult as any)?.txId ?? `tx-${Date.now().toString(36)}`;
 
     return {
-      txHash: `tx-${Date.now().toString(36)}`,
+      txHash,
       nullifier,
       commitmentRef: Buffer.from(commitment).toString('hex'),
       expiresAt: new Date(Date.now() + EXPIRY_MS).toISOString(),
     };
+  }
+
+  /**
+   * Create an unsigned verification transaction for the participant.
+   *
+   * Architecture (MCP-confirmed):
+   *   1. Generate credential material (ephemeral, per-request)
+   *   2. Issue Schnorr attestation
+   *   3. Backend performs enrollment (admin tx — inserts commitment into Merkle tree)
+   *   4. Wait for enrollment confirmation on-chain
+   *   5. Create unsigned verification tx (user's wallet will prove/balance/sign/submit)
+   *
+   * The backend NEVER signs the participant's verification transaction.
+   * Enrollment IS a server-side admin operation (deployer wallet signs it).
+   */
+  async createUnsignedRegisterTx(campaignId: string): Promise<UnsignedRegistrationResult> {
+    if (!this.initialized) {
+      throw new Error('MidnightService not initialized — call initialize() first');
+    }
+
+    const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
+    const expiresAt = BigInt(Date.now() + EXPIRY_MS);
+
+    // Step 1: Generate ephemeral credential material
+    const credSecret = crypto.getRandomValues(new Uint8Array(32));
+    const salt = crypto.getRandomValues(new Uint8Array(32));
+
+    // Step 2: Derive public values
+    const credId = pureCircuits.deriveCredId(credSecret);
+    const commitment = pureCircuits.deriveCommitment(credSecret, salt);
+
+    // Step 3: Issue attestation (Schnorr signature over credId)
+    const attestation = issueAttestation(this.verifier, credSecret, expiresAt);
+
+    // Step 4: Backend performs enrollment (admin tx — signs with deployer wallet)
+    // This inserts the commitment into the Merkle registry on-chain.
+    // The participant's wallet does NOT sign this — it's an admin operation.
+    const adminState: PohPrivateState = {
+      secretKey: crypto.getRandomValues(new Uint8Array(32)),
+      credentialSalt: new Uint8Array(32),
+      verifierSigningKey: 0n,
+      attestation: null,
+      attestedVerifierPk: null,
+      expiresAt: 0n,
+    };
+    await this._setPrivateState('poh-admin-state', adminState);
+    await submitCallTx<Contract, 'enrollCredential'>(this.providers, {
+      compiledContract: CompiledPohCoreContract,
+      contractAddress: this.contractAddress,
+      privateStateId: 'poh-admin-state',
+      circuitId: 'enrollCredential',
+      args: [commitment],
+    } as any);
+    this.logger.info('[MidnightService] Enrollment tx submitted, waiting for confirmation...');
+
+    // Step 5: Wait for enrollment to be confirmed on-chain
+    // The verification circuit checks the Merkle root, which must include the commitment.
+    await this._waitForStateUpdate(60_000);
+    this.logger.info('[MidnightService] Enrollment confirmed on-chain.');
+
+    // Step 6: Create unsigned verification transaction
+    // This is the participant's transaction — their wallet will prove/balance/sign/submit it.
+    const userState: PohPrivateState = {
+      secretKey: credSecret,
+      credentialSalt: salt,
+      verifierSigningKey: 0n,
+      attestation,
+      attestedVerifierPk: this.verifier.pk,
+      expiresAt,
+    };
+    await this._setPrivateState('poh-user-state', userState);
+
+    const verificationResult = await createUnprovenCallTx<Contract, 'verifyPersonhood'>(this.providers, {
+      compiledContract: CompiledPohCoreContract,
+      contractAddress: this.contractAddress,
+      privateStateId: 'poh-user-state',
+      circuitId: 'verifyPersonhood',
+      args: [new TextEncoder().encode(campaignId)],
+    } as any);
+
+    // Compute nullifier off-chain
+    const nullifier = this._computeNullifier(campaignId, credSecret);
+
+    return {
+      enrollmentTx: '', // Enrollment done by backend — no tx for user
+      verificationTx: toHex(verificationResult.private.unprovenTx.serialize()),
+      attestation: {
+        announcement: {
+          x: attestation.announcement.x.toString(),
+          y: attestation.announcement.y.toString(),
+        },
+        response: attestation.response.toString(),
+      },
+      verifierVk: {
+        x: this.verifier.pk.x.toString(),
+        y: this.verifier.pk.y.toString(),
+      },
+      credId: Buffer.from(credId).toString('hex'),
+      commitment: Buffer.from(commitment).toString('hex'),
+      expiresAt: new Date(Date.now() + EXPIRY_MS).toISOString(),
+      nullifier,
+    };
+  }
+
+  /**
+   * Wait for on-chain state to update after a transaction.
+   * Polls the indexer until the latest block height increases.
+   */
+  private async _waitForStateUpdate(timeoutMs: number): Promise<void> {
+    const config = getConfig();
+    const startTime = Date.now();
+    let lastHeight: number | undefined;
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const height = await getChainTipHeight(config.indexer);
+        if (height !== undefined && height !== null) {
+          if (lastHeight === undefined) {
+            lastHeight = height;
+          } else if (height > lastHeight) {
+            return;
+          }
+        }
+      } catch {
+        // Indexer may be temporarily unavailable, keep polling
+      }
+      await new Promise(r => setTimeout(r, 3_000));
+    }
+    this.logger.warn(`[MidnightService] State update wait timed out after ${timeoutMs}ms — proceeding anyway.`);
   }
 
   /**

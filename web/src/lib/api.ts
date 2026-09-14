@@ -148,3 +148,40 @@ export async function registerForCampaignReal(
     body: JSON.stringify({ campaignId, walletHandle }),
   });
 }
+
+// ── Unsigned Registration API (user-wallet-signed flow) ──
+
+export interface ApiUnsignedRegistrationResponse {
+  enrollmentTx: string
+  verificationTx: string
+  attestation: {
+    announcement: { x: string; y: string }
+    response: string
+  }
+  verifierVk: { x: string; y: string }
+  credId: string
+  commitment: string
+  expiresAt: string
+  nullifier: string
+}
+
+export async function registerForCampaignUnsigned(
+  campaignId: string,
+): Promise<ApiUnsignedRegistrationResponse> {
+  return apiFetch<ApiUnsignedRegistrationResponse>('/api/register-unsigned', {
+    method: 'POST',
+    body: JSON.stringify({ campaignId }),
+  })
+}
+
+// ── Network Info API ──
+
+export interface ApiNetworkInfo {
+  faucetUrl: string
+  explorerUrl: string
+  networkId: string
+}
+
+export async function fetchNetworkInfo(): Promise<ApiNetworkInfo> {
+  return apiFetch<ApiNetworkInfo>('/api/network')
+}

@@ -25,11 +25,61 @@ export interface VerificationReceipt {
   signature: string
 }
 
+/**
+ * Midnight wallet state
+ */
 export interface WalletState {
   connected: boolean
   address?: string
   provider?: string
   balance?: string
+  /** Wallet's coin public key (for ZK proofs) */
+  coinPublicKey?: string
+  /** Wallet's encryption public key */
+  encryptionPublicKey?: string
+  /** DUST balance */
+  dustBalance?: bigint
+}
+
+/**
+ * Midnight DApp Connector wallet API types
+ * Based on @midnight-ntwrk/dapp-connector-api v4.0.1
+ */
+export interface MidnightInitialAPI {
+  rdns: string
+  name: string
+  icon: string
+  apiVersion: string
+  connect: (networkId: string) => Promise<MidnightConnectedAPI>
+}
+
+export interface MidnightConnectedAPI {
+  getConfiguration: () => Promise<{
+    indexerUri: string
+    indexerWsUri: string
+    proverServerUri: string
+    substrateNodeUri: string
+    networkId: string
+  }>
+  getConnectionStatus: () => Promise<{
+    status: string
+    networkId: string
+  }>
+  getShieldedAddresses: () => Promise<{
+    shieldedAddress: string
+    shieldedCoinPublicKey: string
+    shieldedEncryptionPublicKey: string
+  }>
+  getUnshieldedAddress: () => Promise<{ unshieldedAddress: string }>
+  getDustAddress: () => Promise<{ dustAddress: string }>
+  getShieldedBalances: () => Promise<Record<string, bigint>>
+  getUnshieldedBalances: () => Promise<Record<string, bigint>>
+  getDustBalance: () => Promise<{ balance: bigint; cap: bigint }>
+  balanceUnsealedTransaction: (tx: string, options?: { payFees?: boolean }) => Promise<{ tx: string }>
+  balanceSealedTransaction: (tx: string, options?: { payFees?: boolean }) => Promise<{ tx: string }>
+  submitTransaction: (tx: string) => Promise<void>
+  makeTransfer?: (outputs: unknown[]) => Promise<string>
+  getProvingProvider?: (keyMaterialProvider: unknown) => unknown
 }
 
 export type VerificationStage =

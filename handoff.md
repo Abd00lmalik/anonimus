@@ -83,7 +83,7 @@ collapsed into one identity record.
 
 ---
 
-## 3. Current status (Phase 0 COMPLETE — toolchain operational)
+## 3. Current status (PREPROD implementation in progress)
 
 **Implemented so far: nothing product-wise** — but the real Midnight toolchain
 is installed and a real compile has succeeded. What exists: research artifacts,
@@ -211,6 +211,44 @@ git repo, auth/toolchain scripts, smoke-test contract, this document.
   `@midnight-ntwrk/wallet-sdk-*` (`WalletFacade.init`, test-wallet workflows on
   local devnet / preprod / preview) per Midnight Expert midnight-wallet plugin.
 - Backend design must keep wallet ownership, personhood, and uniqueness separate.
+
+---
+
+## 3a. PREPROD Implementation Status (2026-09-14)
+
+### What Changed
+1. **`src/config.ts`** — Added `faucet`, `explorer` fields; faucet URL confirmed via MCP
+2. **`src/midnight-service.ts`** — Added `createUnprovenCallTx` import; added `createUnsignedRegisterTx()` method for user-signed transactions
+3. **`src/server.ts`** — Added `POST /api/register-unsigned` endpoint; added `GET /api/network` endpoint; all store calls now properly await async functions
+4. **`src/store.ts`** — Rewritten to support both Supabase and JSON fallback; all functions now return Promises
+5. **`src/supabase.ts`** — New file: Supabase client initialization and health check
+6. **`src/fast-sync/fast-wallet.ts`** — `SAVED_STATE_DIR` now configurable via `WALLET_STATE_DIR` env var
+7. **`web/src/contexts/WalletContext.tsx`** — Rewritten for real DApp Connector API (v4.0.1); detects `window.midnight` wallets; connects via `wallet.connect('preprod')`
+8. **`web/src/contexts/VerificationContext.tsx`** — Rewritten for user-signed transaction flow; calls `/api/register-unsigned` then wallet `balanceUnsealedTransaction` + `submitTransaction`
+9. **`web/src/types/index.ts`** — Added `MidnightInitialAPI`, `MidnightConnectedAPI` types for DApp Connector
+10. **`web/src/lib/api.ts`** — Added `registerForCampaignUnsigned()`, `fetchNetworkInfo()` API functions
+11. **`supabase/schema.sql`** — New file: complete database schema for campaigns + registrations
+12. **`.env.example`** — Updated with all required environment variables
+13. **`package.json`** — Added `@supabase/supabase-js` dependency
+14. **`scripts/deploy-vps.sh`** — New file: VPS deployment script
+15. **`scripts/nginx-anonimus.conf`** — New file: Nginx reverse proxy config
+16. **`PREPROD-DEPLOYMENT.md`** — New file: deployment guide
+
+### What MCP Confirmed
+- **Faucet URL**: `https://midnight-tmnight-preprod.nethermind.dev/`
+- **Network ID**: `preprod`
+- **DApp Connector**: `window.midnight.{walletId}` → `.connect('preprod')` → `ConnectedAPI`
+- **Transaction flow**: `createUnprovenCallTx()` → wallet proves/balances/signs/submits
+- **Lace wallet**: `window.midnight.mnLace`
+- **1AM wallet**: `window.midnight['1am']`
+- **Proof server**: Always local (`http://localhost:6300`)
+
+### Test Results
+- TypeScript typecheck: PASS (backend + frontend)
+- Audit tests: 24/24 PASS
+- Crypto unit tests: 16/16 PASS
+- Integration tests: 62/62 PASS
+- Total: 102/102 PASS
 
 ---
 

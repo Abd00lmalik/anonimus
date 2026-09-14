@@ -7,7 +7,6 @@ import {
   CompactTypeVector,
 } from '@midnight-ntwrk/compact-runtime';
 import { pureCircuits } from '../contracts/managed/poh_core/contract/index.js';
-import type { CircuitContext } from '@midnight-ntwrk/compact-runtime';
 
 // ============================================================================
 // Jubjub Schnorr helpers — implemented via compact-runtime EC primitives.
@@ -121,7 +120,6 @@ export function verifyAttestationOffChain(
 
 // Derive the credential id through the contract's own pure circuit.
 export function deriveCredId(credSecret: Uint8Array): Uint8Array {
-  const ctx = {} as CircuitContext<null>;
   return pureCircuits.deriveCredId(credSecret);
 }
 

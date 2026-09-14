@@ -1,14 +1,14 @@
 # Midnight Local Development Network
 # Generated: 2026-09-06T16:05:00Z
 # Generator: Anonimus (from midnight-tooling plugin template)
-# Versions: stable tags resolved from Docker Hub on 2026-09-06
-#   node 1.0.1 (2.1.0 exists but is beta), indexer 4.3.7, proof-server 8.1.0
+# Versions: from Midnight MCP compatibility matrix
+#   node 1.0.2 (stable), indexer 4.4.0-rc.2 (local devnet RC), proof-server 8.1.0 (stable)
 
 name: midnight-devnet
 
 services:
   node:
-    image: midnightntwrk/midnight-node:1.0.1
+    image: midnightntwrk/midnight-node:1.0.2
     container_name: midnight-node
     ports:
       - '9944:9944'

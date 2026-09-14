@@ -27,7 +27,13 @@ export function buildProviders(
   return {
     privateStateProvider: levelPrivateStateProvider<string, PohPrivateState>({
       privateStateStoreName: storeName,
-      privateStoragePasswordProvider: () => process.env['PRIVATE_STATE_PASSWORD'] ?? 'Anonimus-Dev-Password',
+      privateStoragePasswordProvider: () => {
+        const password = process.env['PRIVATE_STATE_PASSWORD'];
+        if (!password) {
+          throw new Error('PRIVATE_STATE_PASSWORD env var is required');
+        }
+        return password;
+      },
       accountId: wallet.getCoinPublicKey(),
     }),
     publicDataProvider: indexerPublicDataProvider(

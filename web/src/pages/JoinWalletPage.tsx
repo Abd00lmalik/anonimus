@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { fetchCampaign } from '../lib/api'
+import { fetchCampaign, fetchNetworkInfo } from '../lib/api'
 import { useVerification } from '../contexts/VerificationContext'
 import type { Campaign } from '../types'
 
@@ -38,6 +38,7 @@ export function JoinWalletPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [faucetUrl, setFaucetUrl] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -55,6 +56,9 @@ export function JoinWalletPage() {
         })
       })
       .catch(() => navigate('/campaigns'))
+    fetchNetworkInfo()
+      .then(info => setFaucetUrl(info.faucetUrl))
+      .catch(() => {})
   }, [id, navigate])
 
   if (!campaign) {
@@ -172,6 +176,28 @@ export function JoinWalletPage() {
             </motion.button>
           ))}
         </div>
+
+        {faucetUrl && (
+          <div style={{
+            marginBottom: 'var(--space-6)',
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'rgba(198, 163, 90, 0.06)',
+            border: '1px solid rgba(198, 163, 90, 0.15)',
+            borderRadius: 'var(--radius-sm)',
+            fontFamily: 'var(--font-ui)', fontSize: '0.8125rem',
+            color: 'var(--text-secondary)',
+          }}>
+            Need test tokens?{' '}
+            <a
+              href={faucetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+            >
+              Get tNIGHT from the faucet
+            </a>
+          </div>
+        )}
 
         {error && (
           <div style={{

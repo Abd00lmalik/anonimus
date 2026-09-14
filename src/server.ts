@@ -15,12 +15,13 @@ import {
   type AttestationRequest,
 } from './attestation-service.js';
 import { MidnightService } from './midnight-service.js';
+import { getFaucetUrl, getExplorerUrl } from './config.js';
 
 // ============================================================================
 // Anonimus Backend Server — Phase 1 (real Midnight integration)
 //
 // Provides:
-//   1. Campaign CRUD (metadata persistence)
+//   1. Campaign CRUD (metadata persistence via Supabase or JSON fallback)
 //   2. Registration via real Midnight ZK proof + transaction
 //   3. Attestation issuance (verifier service)
 //   4. Health + status endpoints
@@ -30,6 +31,9 @@ import { MidnightService } from './midnight-service.js';
 //   - ZK proof generation (Schnorr + Merkle + nullifier)
 //   - Midnight transaction submission
 //   - On-chain state change
+//
+// The /api/register-unsigned endpoint creates unsigned transactions
+// that the participant's wallet proves, balances, signs, and submits.
 // ============================================================================
 
 const app = express();
@@ -84,28 +88,39 @@ app.get('/api/verifier', (_req, res) => {
 
 // ── Campaign CRUD ─────────────────────────────────────────────────────
 
-app.get('/api/campaigns', (_req, res) => {
-  const campaigns = getAllCampaigns();
-  const withCounts = campaigns.map(c => ({
-    ...c,
-    registrations: getRegistrationCount(c.id),
-  }));
-  res.json({ campaigns: withCounts });
-});
-
-app.get('/api/campaigns/:id', (req, res) => {
-  const campaign = getCampaignById(req.params['id']);
-  if (!campaign) {
-    res.status(404).json({ error: 'Campaign not found' });
-    return;
+app.get('/api/campaigns', async (_req, res) => {
+  try {
+    const campaigns = await getAllCampaigns();
+    const withCounts = await Promise.all(
+      campaigns.map(async (c) => ({
+        ...c,
+        registrations: await getRegistrationCount(c.id),
+      }))
+    );
+    res.json({ campaigns: withCounts });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
-  res.json({
-    ...campaign,
-    registrations: getRegistrationCount(campaign.id),
-  });
 });
 
-app.post('/api/campaigns', (req, res) => {
+app.get('/api/campaigns/:id', async (req, res) => {
+  try {
+    const campaign = await getCampaignById(req.params['id']);
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+    const registrations = await getRegistrationCount(campaign.id);
+    res.json({
+      ...campaign,
+      registrations,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/campaigns', async (req, res) => {
   try {
     const {
       title, organizer, description, purpose,
@@ -117,7 +132,7 @@ app.post('/api/campaigns', (req, res) => {
       return;
     }
 
-    const campaign = createCampaign({
+    const campaign = await createCampaign({
       title, organizer, description: description ?? '',
       purpose: purpose ?? '', scope, startDate, endDate,
       purposeType: purposeType ?? 'community',
@@ -132,19 +147,23 @@ app.post('/api/campaigns', (req, res) => {
 
 // ── Registration (legacy — kept for backward compatibility) ──────────
 
-app.get('/api/campaigns/:id/registrations', (req, res) => {
-  const campaign = getCampaignById(req.params['id']);
-  if (!campaign) {
-    res.status(404).json({ error: 'Campaign not found' });
-    return;
+app.get('/api/campaigns/:id/registrations', async (req, res) => {
+  try {
+    const campaign = await getCampaignById(req.params['id']);
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+    const registrations = await getRegistrationsByCampaign(campaign.id);
+    res.json({ registrations, count: registrations.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
-  const registrations = getRegistrationsByCampaign(campaign.id);
-  res.json({ registrations, count: registrations.length });
 });
 
-app.post('/api/campaigns/:id/register', (req, res) => {
+app.post('/api/campaigns/:id/register', async (req, res) => {
   try {
-    const campaign = getCampaignById(req.params['id']);
+    const campaign = await getCampaignById(req.params['id']);
     if (!campaign) {
       res.status(404).json({ error: 'Campaign not found' });
       return;
@@ -156,12 +175,13 @@ app.post('/api/campaigns/:id/register', (req, res) => {
       return;
     }
 
-    if (isRegistered(campaign.id, nullifier)) {
+    const alreadyRegistered = await isRegistered(campaign.id, nullifier);
+    if (alreadyRegistered) {
       res.status(409).json({ error: 'Already registered in this campaign' });
       return;
     }
 
-    const registration = addRegistration({
+    const registration = await addRegistration({
       campaignId: campaign.id,
       walletHandle,
       nullifier,
@@ -207,7 +227,7 @@ app.post('/api/register', async (req, res) => {
       return;
     }
 
-    const campaign = getCampaignById(campaignId);
+    const campaign = await getCampaignById(campaignId);
     if (!campaign) {
       res.status(404).json({ error: 'Campaign not found' });
       return;
@@ -217,13 +237,14 @@ app.post('/api/register', async (req, res) => {
     const result = await midnightService.register(campaignId);
 
     // Check for duplicate nullifier in this campaign
-    if (isRegistered(campaignId, result.nullifier)) {
+    const alreadyRegistered = await isRegistered(campaignId, result.nullifier);
+    if (alreadyRegistered) {
       res.status(409).json({ error: 'Already registered in this campaign' });
       return;
     }
 
     // Record registration
-    const registration = addRegistration({
+    const registration = await addRegistration({
       campaignId,
       walletHandle,
       nullifier: result.nullifier,
@@ -270,10 +291,61 @@ app.post('/api/attest', (req, res) => {
   }
 });
 
+// ── Unsigned registration (user-wallet-signed flow) ─────────────────
+//
+// This endpoint creates unsigned transactions that the participant's
+// wallet will prove, balance, sign, and submit.
+//
+// The backend NEVER signs the participant's transaction.
+
+app.post('/api/register-unsigned', async (req, res) => {
+  try {
+    if (!midnightService.isReady()) {
+      res.status(503).json({
+        error: 'Midnight service initializing — contract deployment in progress',
+      });
+      return;
+    }
+
+    const { campaignId } = req.body;
+    if (!campaignId) {
+      res.status(400).json({ error: 'Missing campaignId' });
+      return;
+    }
+
+    const campaign = await getCampaignById(campaignId);
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    // Create unsigned transactions for the participant's wallet
+    const result = await midnightService.createUnsignedRegisterTx(campaignId);
+
+    res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[Anonimus] Unsigned registration failed:', err.message ?? 'unknown error');
+    const message = err.message ?? 'Registration failed';
+    const status = message.includes('not initialized') ? 503 : 500;
+    res.status(status).json({ error: message });
+  }
+});
+
+// ── Network info ────────────────────────────────────────────────────
+
+app.get('/api/network', (_req, res) => {
+  res.json({
+    faucetUrl: getFaucetUrl(),
+    explorerUrl: getExplorerUrl(),
+    networkId: process.env['MIDNIGHT_NETWORK'] ?? 'local',
+  });
+});
+
 // ── Start ─────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
   console.log(`[Anonimus] Backend server running on http://localhost:${PORT}`);
   console.log(`[Anonimus] Real registration: POST /api/register`);
+  console.log(`[Anonimus] Unsigned registration: POST /api/register-unsigned`);
   console.log(`[Anonimus] Midnight service: initializing in background...`);
 });

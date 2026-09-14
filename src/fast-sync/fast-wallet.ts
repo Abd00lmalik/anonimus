@@ -2,7 +2,7 @@ import {
   DustSecretKey,
   LedgerParameters,
   ZswapSecretKeys,
-} from '@midnight-ntwrk/wallet-sdk/ledger/v9';
+} from '@midnight-ntwrk/midnight-js-protocol/ledger';
 import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import {
   InMemoryTransactionHistoryStorage,
@@ -11,7 +11,7 @@ import {
   WalletEntrySchema,
   WalletFacade,
 } from '@midnight-ntwrk/wallet-sdk';
-import { ShieldedWallet, V9_NATIVE_FORK_VERSION } from '@midnight-ntwrk/wallet-sdk/shielded';
+import { ShieldedWallet } from '@midnight-ntwrk/wallet-sdk/shielded';
 import { DustWallet } from '@midnight-ntwrk/wallet-sdk/dust';
 import { createKeystore, PublicKey, UnshieldedWallet } from '@midnight-ntwrk/wallet-sdk/unshielded';
 import { type EnvironmentConfiguration, WalletSeeds } from '@midnight-ntwrk/testkit-js';
@@ -40,7 +40,7 @@ export interface AssembledWallet {
   subWallets: { shielded: any; dust: any; unshielded: any };
 }
 
-const SAVED_STATE_DIR = '/opt/anonimus/wallet-state';
+const SAVED_STATE_DIR = process.env['WALLET_STATE_DIR'] ?? '/opt/anonimus/wallet-state';
 const SAVED_STATE_MANIFEST = join(SAVED_STATE_DIR, 'manifest.json');
 
 export interface SavedWalletState {
@@ -180,14 +180,13 @@ export async function assembleWallet(
     : WalletSeeds.fromMasterSeed(secret.value);
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  const keystore = createKeystore({ kind: 'schnorr', secret: seeds.unshielded } as any, networkId);
+  const keystore = createKeystore(new Uint8Array(seeds.unshielded), networkId);
   const zswapSecretKeys = ZswapSecretKeys.fromSeed(seeds.shielded) as any;
   const dustSecretKey = DustSecretKey.fromSeed(seeds.dust) as any;
   const unshieldedPublicKey = PublicKey.fromKeyStore(keystore);
 
   const config = {
     networkId,
-    forks: { v9: V9_NATIVE_FORK_VERSION },
     indexerClientConnection: { indexerHttpUrl: env.indexer, indexerWsUrl: env.indexerWS },
     provingServerUrl: new URL(env.proofServer),
     relayURL: new URL(env.nodeWS),
@@ -198,7 +197,6 @@ export async function assembleWallet(
   const dustConfig = {
     ...config,
     costParameters: {
-      ledgerParams: LedgerParameters.initialParameters(),
       additionalFeeOverhead: 1_000n,
       feeBlocksMargin: 5,
     },

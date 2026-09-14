@@ -6,6 +6,7 @@ export type NetworkConfig = {
   nodeWS: string;
   proofServer: string;
   faucet: string;
+  explorer: string;
 };
 
 // Local devnet (Docker: node :9944, indexer :8088, proof-server :6300).
@@ -18,18 +19,21 @@ export const LOCAL_CONFIG: NetworkConfig = {
   nodeWS: 'ws://127.0.0.1:9944',
   proofServer: 'http://127.0.0.1:6300',
   faucet: '',
+  explorer: '',
 };
 
-// Midnight Preprod — public infrastructure, no faucet needed.
+// Midnight Preprod — public infrastructure.
 // Proof server is always local (localhost:6300) regardless of network.
+// Faucet: https://midnight-tmnight-preprod.nethermind.dev/
 export const PREPROD_CONFIG: NetworkConfig = {
   networkId: 'preprod',
   indexer: 'https://indexer.preprod.midnight.network/api/v4/graphql',
   indexerWS: 'wss://indexer.preprod.midnight.network/api/v4/graphql/ws',
   node: 'https://rpc.preprod.midnight.network',
   nodeWS: 'wss://rpc.preprod.midnight.network',
-  proofServer: 'http://127.0.0.1:6300',
-  faucet: '',
+  proofServer: process.env['MIDNIGHT_PROOF_SERVER'] ?? 'http://127.0.0.1:6300',
+  faucet: 'https://midnight-tmnight-preprod.nethermind.dev/',
+  explorer: 'https://preprod.midnightexplorer.com/',
 };
 
 export function getConfig(): NetworkConfig {
@@ -39,4 +43,19 @@ export function getConfig(): NetworkConfig {
   throw new Error(
     `Unknown network: ${network}. Supported: 'local', 'preprod'.`,
   );
+}
+
+/**
+ * Get the faucet URL for the current network.
+ * Returns empty string for local (no faucet needed).
+ */
+export function getFaucetUrl(): string {
+  return getConfig().faucet;
+}
+
+/**
+ * Get the block explorer URL for the current network.
+ */
+export function getExplorerUrl(): string {
+  return getConfig().explorer;
 }

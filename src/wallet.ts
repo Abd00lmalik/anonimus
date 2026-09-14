@@ -69,10 +69,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
 
   async start(): Promise<void> {
     this.logger.info('Starting wallet...');
-    await (this.wallet as any).start({
-      shielded: this.walletSeeds.shielded,
-      dust: this.walletSeeds.dust,
-    });
+    await this.wallet.start(this.zswapSecretKeys, this.dustSecretKey);
   }
 
   async stop(): Promise<void> {

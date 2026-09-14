@@ -1,16 +1,19 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import type { Campaign, VerificationReceipt, VerificationStage } from '../types'
 import { useWallet } from './WalletContext'
-import { registerForCampaignReal } from '../lib/api'
+import { registerForCampaignUnsigned, type ApiUnsignedRegistrationResponse } from '../lib/api'
 
 // ============================================================================
-// VerificationContext — real verification flow
+// VerificationContext — real verification flow with user-signed transactions
 //
 // The flow:
-//   1. Wallet connection (mock devnet wallet for UX)
+//   1. Wallet connection (real Midnight wallet via DApp Connector)
 //   2. Disclosure review
 //   3. Face check (client-side spatial quality — NOT liveness/personhood)
-//   4. Registration (real Midnight ZK proof + transaction via backend)
+//   4. Backend creates unsigned transactions
+//   5. User's wallet proves, balances, signs, and submits transactions
+//   6. Wait for on-chain confirmation
+//   7. Show success
 //
 // Privacy boundary:
 //   - Face data: stays on user device (never sent to backend)
@@ -52,7 +55,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
   const [campaign, setCampaignState] = useState<Campaign | null>(null)
   const [receipt, setReceipt] = useState<VerificationReceipt | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const { wallet, connect } = useWallet()
+  const { walletAPI, connect } = useWallet()
 
   const [faceVerificationState, setFaceVerificationStateInternal] = useState({
     modelsLoaded: false,
@@ -86,35 +89,42 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const startVerification = useCallback(async () => {
-    if (!campaign) return
+    if (!campaign || !walletAPI) return
 
     try {
       setStage('preparing')
       setError(null)
 
-      // Step 1: Generating proof — real ZK proof generation via backend
-      // This triggers: credential enrollment + Schnorr attestation +
-      // ZK proof generation + Midnight transaction submission
-      setStage('generating-proof')
-
-      const registrationResult = await registerForCampaignReal(
+      // Step 1: Backend performs enrollment (admin tx) + creates unsigned verification tx
+      const unsignedData: ApiUnsignedRegistrationResponse = await registerForCampaignUnsigned(
         campaign.id,
-        wallet.address ?? 'devnet-wallet',
       )
 
-      // Step 2: Attestation verified (real Schnorr check happened inside the proof)
-      setStage('checking-attestation')
+      // Step 2: User's wallet proves the verification transaction
+      // The wallet fetches ZK artifacts from the DApp's URL and generates the ZK proof
+      setStage('generating-proof')
 
-      // Step 3: Uniqueness verified (real nullifier spend happened on-chain)
+      // Step 3: User's wallet balances, signs, and submits the verification transaction
+      // This is the participant's transaction — their wallet signs it
+      const balancedTx = await walletAPI.balanceUnsealedTransaction(
+        unsignedData.verificationTx,
+        { payFees: true }
+      )
+
+      // Step 4: Submit the verified transaction
+      await walletAPI.submitTransaction(balancedTx.tx)
+
+      // Step 5: Create verification receipt
+      setStage('checking-attestation')
       setStage('checking-uniqueness')
 
       const verificationReceipt: VerificationReceipt = {
-        nullifier: `0x${registrationResult.nullifier}`,
-        scope: registrationResult.scope,
-        sessionId: `tx-${registrationResult.txHash.slice(0, 16)}`,
+        nullifier: `0x${unsignedData.nullifier}`,
+        scope: campaign.id,
+        sessionId: `tx-${Date.now().toString(36)}`,
         issuedAt: new Date().toISOString(),
-        expiresAt: registrationResult.expiresAt,
-        signature: registrationResult.txHash,
+        expiresAt: unsignedData.expiresAt,
+        signature: unsignedData.attestation.response,
       }
 
       setReceipt(verificationReceipt)
@@ -122,22 +132,30 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
     } catch (err: any) {
       const message = err.message || 'Verification failed'
 
-      // Surface specific failure modes
       if (message.includes('Already used in this campaign')) {
         setStage('error')
         setError('This credential has already been used in this campaign.')
       } else if (message.includes('not initialized')) {
         setStage('error')
         setError('Midnight service is still initializing. Please try again in a moment.')
-      } else if (message.includes('Wallet')) {
+      } else if (message.includes('Wallet') || message.includes('wallet')) {
         setStage('error')
-        setError('Wallet rejected the transaction.')
+        setError('Wallet rejected the transaction. Please check your wallet and try again.')
+      } else if (message.includes('insufficient') || message.includes('DUST') || message.includes('dust')) {
+        setStage('error')
+        setError('Insufficient funds. Please get test tokens from the faucet.')
+      } else if (message.includes('proof') || message.includes('Proving') || message.includes('prove')) {
+        setStage('error')
+        setError('Proof generation failed. Please check your proof server connection and try again.')
+      } else if (message.includes('network') || message.includes('Network') || message.includes('fetch')) {
+        setStage('error')
+        setError('Network error. Please check your connection and try again.')
       } else {
         setStage('error')
         setError(message)
       }
     }
-  }, [campaign, wallet.address])
+  }, [campaign, walletAPI])
 
   const reset = useCallback(() => {
     setStage('idle')

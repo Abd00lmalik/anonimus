@@ -1,6 +1,6 @@
 import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
-import type { DustSecretKey, ZswapSecretKeys } from '@midnight-ntwrk/wallet-sdk/ledger/v9';
-import type { PublicKey } from '@midnight-ntwrk/wallet-sdk/unshielded';
+import type { DustSecretKey, ZswapSecretKeys } from '@midnight-ntwrk/midnight-js-protocol/ledger';
+import type { PublicKey } from '@midnight-ntwrk/wallet-sdk-unshielded-wallet';
 import type { EmptyRefStates } from './reference-bundle.js';
 
 export interface NewWalletKeys {
