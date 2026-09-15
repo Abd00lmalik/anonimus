@@ -1,11 +1,11 @@
 // ============================================================================
 // API Client — frontend ↔ backend communication
 //
-// Base URL defaults to localhost:3001 for local dev.
-// In production, this would be configured via environment variables.
+// API_BASE is always '' (same-origin). In production, Vercel rewrites in
+// vercel.json proxy /api/* to the backend. In local dev, use vite proxy.
 // ============================================================================
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '';
+const API_BASE = '';
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
