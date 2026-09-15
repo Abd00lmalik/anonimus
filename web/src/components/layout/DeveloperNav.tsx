@@ -1,10 +1,12 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Logo } from '../ui/Logo'
+import { useTheme } from '../../contexts/ThemeContext'
 
 export function DeveloperNav() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { theme, toggle } = useTheme()
 
   return (
     <motion.nav
@@ -120,6 +122,34 @@ export function DeveloperNav() {
             }}
           >
             Project Settings
+          </button>
+
+          <button
+            onClick={toggle}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            style={{
+              width: 44,
+              height: 44,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-muted)',
+              transition: 'color var(--duration-fast) var(--ease-out)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+          >
+            {theme === 'dark' ? (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <circle cx="9" cy="9" r="4" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M9 1.5V3M9 15v1.5M1.5 9H3M15 9h1.5M3.4 3.4l1.1 1.1M13.5 13.5l1.1 1.1M3.4 14.6l1.1-1.1M13.5 4.5l1.1-1.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path d="M15.5 10.5a6.5 6.5 0 01-8-8 6.5 6.5 0 108 8z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
           </button>
         </div>
       </div>

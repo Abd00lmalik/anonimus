@@ -258,40 +258,60 @@ export function HomePage() {
 
       {/* Developers */}
       <SectionReveal>
-        <section style={{ padding: 'var(--space-24) var(--space-8)', maxWidth: 'var(--max-width)', margin: '0 auto' }}>
-          <Card variant="outlined" padding="lg" style={{ textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-            <div style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'radial-gradient(ellipse at 50% 0%, rgba(198,163,90,0.05) 0%, transparent 60%)',
-              pointerEvents: 'none',
-            }} />
-            <div style={{ position: 'relative', zIndex: 1 }}>
-              <Badge variant="accent" style={{ marginBottom: 'var(--space-6)' }}>Developers</Badge>
-              <h2 style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: 'clamp(1.5rem, 3vw, 2.25rem)',
-                fontWeight: 400,
-                color: 'var(--text-primary)',
-                marginBottom: 'var(--space-4)',
-              }}>
-                Build with Anonimus
-              </h2>
-              <p style={{ fontSize: '0.9375rem', color: 'var(--text-muted)', maxWidth: 500, margin: '0 auto auto var(--space-4)', lineHeight: 1.7 }}>
-                Send a user. Receive a receipt. Never receive a person.
-              </p>
-              <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', maxWidth: 500, margin: '0 auto var(--space-8)', lineHeight: 1.7 }}>
-                Integrate zero-knowledge humanity verification into your application. Simple SDK, powerful guarantees.
-              </p>
-              <div style={{ display: 'flex', gap: 'var(--space-4)', justifyContent: 'center' }}>
-                <Button>View Documentation</Button>
-                <a href="https://github.com/Abd00lmalik/anonimus" target="_blank" rel="noopener noreferrer">
-                  <Button variant="secondary" style={{ textDecoration: 'none' }}>GitHub</Button>
-                </a>
-                <Button variant="ghost">Open Dashboard</Button>
-              </div>
+        <section style={{
+          padding: 'var(--space-24) var(--space-8)',
+          display: 'flex',
+          justifyContent: 'center',
+        }}>
+          <div style={{ maxWidth: 640, width: '100%', textAlign: 'center' }}>
+            <span style={{
+              fontFamily: 'var(--font-ui)',
+              fontSize: '0.6875rem',
+              fontWeight: 500,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: 'var(--accent)',
+              display: 'block',
+              marginBottom: 'var(--space-4)',
+            }}>
+              Developers
+            </span>
+            <h2 style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: 'clamp(1.5rem, 3vw, 2.25rem)',
+              fontWeight: 400,
+              color: 'var(--text-primary)',
+              marginBottom: 'var(--space-4)',
+            }}>
+              Build with Anonimus
+            </h2>
+            <p style={{
+              fontSize: '0.9375rem',
+              color: 'var(--text-secondary)',
+              maxWidth: 480,
+              margin: '0 auto var(--space-2)',
+              lineHeight: 1.7,
+            }}>
+              Send a user a receipt. Never receive a person.
+            </p>
+            <p style={{
+              fontSize: '0.8125rem',
+              color: 'var(--text-muted)',
+              maxWidth: 480,
+              margin: '0 auto var(--space-8)',
+              lineHeight: 1.7,
+            }}>
+              Integrate zero-knowledge humanity verification into your application.
+              Simple SDK, powerful guarantees.
+            </p>
+            <div style={{ display: 'flex', gap: 'var(--space-4)', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button>View Documentation</Button>
+              <a href="https://github.com/Abd00lmalik/anonimus" target="_blank" rel="noopener noreferrer">
+                <Button variant="ghost" style={{ textDecoration: 'none' }}>GitHub</Button>
+              </a>
+              <Button variant="ghost" onClick={() => navigate('/operator')}>Open Dashboard</Button>
             </div>
-          </Card>
+          </div>
         </section>
       </SectionReveal>
 

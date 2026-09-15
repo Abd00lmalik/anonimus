@@ -60,6 +60,29 @@
   --nav-height: 72px;
 }
 
+[data-theme="light"] {
+  --bg-primary: #F4F0E8;
+  --bg-secondary: #EDE8DE;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #EDE8DE;
+
+  --text-primary: #161418;
+  --text-secondary: #5C5852;
+  --text-muted: #7A766E;
+  --bone: #161418;
+  --border: rgba(22, 20, 24, 0.1);
+  --border-hover: rgba(22, 20, 24, 0.2);
+
+  --accent: #8A6A2E;
+  --accent-hover: #7A5A24;
+  --accent-muted: rgba(138, 106, 46, 0.1);
+  --accent-glow: rgba(138, 106, 46, 0.15);
+
+  --success: #5A8A64;
+  --warning: #9A7A36;
+  --error: #A05A52;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --duration-fast: 0ms;

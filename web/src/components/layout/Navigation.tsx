@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Logo } from '../ui/Logo'
+import { useTheme } from '../../contexts/ThemeContext'
 
 export function Navigation() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const { theme, toggle } = useTheme()
 
   const navItems = [
     { label: 'How it works', href: '/how-it-works' },
@@ -137,31 +139,61 @@ export function Navigation() {
           </button>
         </div>
 
-        <button
-          className="mobile-menu-btn"
-          style={{
-            display: 'none',
-            width: 44,
-            height: 44,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-primary)',
-          }}
-          onClick={() => setMobileOpen(!mobileOpen)}
-          aria-label="Toggle navigation menu"
-        >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            {mobileOpen ? (
-              <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <button
+            onClick={toggle}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            style={{
+              width: 44,
+              height: 44,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-muted)',
+              transition: 'color var(--duration-fast) var(--ease-out)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+          >
+            {theme === 'dark' ? (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <circle cx="9" cy="9" r="4" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M9 1.5V3M9 15v1.5M1.5 9H3M15 9h1.5M3.4 3.4l1.1 1.1M13.5 13.5l1.1 1.1M3.4 14.6l1.1-1.1M13.5 4.5l1.1-1.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
             ) : (
-              <path d="M3 6H17M3 10H17M3 14H17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path d="M15.5 10.5a6.5 6.5 0 01-8-8 6.5 6.5 0 108 8z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             )}
-          </svg>
-        </button>
-      </div>
+          </button>
 
-      <style>{`
+          <button
+            className="mobile-menu-btn"
+            style={{
+              display: 'none',
+              width: 44,
+              height: 44,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-primary)',
+            }}
+            onClick={() => setMobileOpen(!mobileOpen)}
+            aria-label="Toggle navigation menu"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              {mobileOpen ? (
+                <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              ) : (
+                <path d="M3 6H17M3 10H17M3 14H17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              )}
+            </svg>
+          </button>
+        </div>
+        </div>
+
+        <style>{`
         @media (max-width: 768px) {
           .nav-links { display: none !important; }
           .mobile-menu-btn { display: flex !important; }
