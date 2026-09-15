@@ -59,7 +59,7 @@ export function CampaignsListPage() {
             maxWidth: 520,
             lineHeight: 1.6,
           }}>
-            Join a campaign to verify your personhood. Each verification is unique to the campaign scope — your identity stays private.
+            Join a campaign to verify your personhood. Each verification is unique to the campaign scope. Your identity stays private.
           </p>
         </div>
 

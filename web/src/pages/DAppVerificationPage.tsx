@@ -231,7 +231,7 @@ export function DAppVerificationPage() {
             color: 'var(--accent)',
             marginBottom: 'var(--space-3)',
           }}>
-            Step 3 of 4 — Generating Proof
+            Step 3 of 4, Generating Proof
           </div>
           <h1 style={{
             fontFamily: 'var(--font-display)',

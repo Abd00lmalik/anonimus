@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Logo } from '../ui/Logo'
 
 export function Footer() {
   return (
@@ -19,8 +20,11 @@ export function Footer() {
         }}
       >
         <div>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.125rem', marginBottom: 'var(--space-4)', color: 'var(--text-primary)' }}>
-            ANONIMUS
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+            <Logo size={24} />
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.125rem', color: 'var(--text-primary)' }}>
+              ANONIMUS
+            </span>
           </div>
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>
             Privacy-preserving humanity verification on Midnight Network.
@@ -43,7 +47,7 @@ export function Footer() {
             Resources
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            <a href="https://github.com/anonimus" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>GitHub</a>
+            <a href="https://github.com/Abd00lmalik/anonimus" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>GitHub</a>
             <a href="https://docs.midnight.network" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>Midnight Docs</a>
             <a href="/privacy" style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>Privacy Policy</a>
           </div>
@@ -54,8 +58,8 @@ export function Footer() {
             Network
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Midnight Testnet</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Network ID: undeployed</span>
+            <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Midnight PREPROD</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Network ID: preprod</span>
           </div>
         </div>
       </div>

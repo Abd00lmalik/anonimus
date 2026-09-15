@@ -64,7 +64,7 @@ export function DeveloperEntryPage() {
             margin: '0 auto',
           }}>
             Create verification requests for your DApp. Users verify their humanity
-            privately — you receive a signed receipt proving uniqueness.
+            privately. You receive a signed receipt proving uniqueness.
           </p>
         </div>
 
@@ -86,7 +86,7 @@ export function DeveloperEntryPage() {
             {[
               { step: '1', text: 'Create a verification request with your scope and return URL' },
               { step: '2', text: 'Embed the Anonimus verification link in your DApp' },
-              { step: '3', text: 'Users verify privately — you receive a signed cryptographic receipt' },
+              { step: '3', text: 'Users verify privately, you receive a signed cryptographic receipt' },
               { step: '4', text: 'Verify the receipt server-side using the Anonimus public key' },
             ].map(item => (
               <div key={item.step} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)' }}>
@@ -138,7 +138,7 @@ export function DeveloperEntryPage() {
               </div>
               <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
                 You will never see participant identities, biometrics, or wallet private keys.
-                You receive proof of uniqueness — nothing more.
+                You receive proof of uniqueness, nothing more.
               </p>
             </div>
           </div>

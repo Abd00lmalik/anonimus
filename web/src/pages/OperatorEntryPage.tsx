@@ -175,9 +175,10 @@ function IdleState({ onConnect, connectingProvider }: { onConnect: (id: string) 
           transition={{ duration: 0.6, delay: 0.1 }}
           style={{ marginBottom: 'var(--space-8)' }}
         >
-          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-            <circle cx="40" cy="40" r="36" stroke="#C6A35A" strokeWidth="1.2" strokeDasharray="180 22" />
-            <circle cx="40" cy="40" r="28" stroke="#C6A35A" strokeWidth="0.5" opacity="0.3" />
+          <svg width="80" height="80" viewBox="0 0 120 120" fill="none">
+            <circle cx="60" cy="60" r="52" stroke="#C6A35A" strokeWidth="1.5" strokeDasharray="280 30" opacity="0.7"/>
+            <path d="M60 28L36 40V58C36 74.5 46.2 90.1 60 94C73.8 90.1 84 74.5 84 58V40L60 28Z" stroke="#C6A35A" strokeWidth="1.2" fill="none" opacity="0.5"/>
+            <circle cx="60" cy="60" r="4" fill="#C6A35A" opacity="0.8"/>
           </svg>
         </motion.div>
 
@@ -199,7 +200,7 @@ function IdleState({ onConnect, connectingProvider }: { onConnect: (id: string) 
           lineHeight: 1.7,
           margin: '0 auto',
         }}>
-          Create verification campaigns and let people prove they are human
+          Create verification campaigns and let people prove they are human,
           without exposing their identity.
         </p>
       </div>
@@ -223,7 +224,7 @@ function IdleState({ onConnect, connectingProvider }: { onConnect: (id: string) 
           {[
             { step: '1', text: 'Connect your Midnight wallet to establish your project identity' },
             { step: '2', text: 'Create a verification scope for your community' },
-            { step: '3', text: 'People prove humanity privately — you receive proof of uniqueness' },
+            { step: '3', text: 'People prove humanity privately, you receive proof of uniqueness' },
           ].map(item => (
             <div key={item.step} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)' }}>
               <span style={{
@@ -278,7 +279,7 @@ function IdleState({ onConnect, connectingProvider }: { onConnect: (id: string) 
           }}>
             <strong style={{ color: 'var(--text-primary)' }}>Verified does not mean identified.</strong>{' '}
             You will never see participant names, biometrics, or identities.
-            You receive proof of uniqueness — nothing more.
+            You receive proof of uniqueness, nothing more.
           </p>
         </div>
       </div>

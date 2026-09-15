@@ -278,14 +278,16 @@ export function HomePage() {
                 Build with Anonimus
               </h2>
               <p style={{ fontSize: '0.9375rem', color: 'var(--text-muted)', maxWidth: 500, margin: '0 auto auto var(--space-4)', lineHeight: 1.7 }}>
-                Send the user. Receive a receipt. Never receive a person.
+                Send a user. Receive a receipt. Never receive a person.
               </p>
               <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', maxWidth: 500, margin: '0 auto var(--space-8)', lineHeight: 1.7 }}>
                 Integrate zero-knowledge humanity verification into your application. Simple SDK, powerful guarantees.
               </p>
               <div style={{ display: 'flex', gap: 'var(--space-4)', justifyContent: 'center' }}>
                 <Button>View Documentation</Button>
-                <Button variant="secondary">GitHub</Button>
+                <a href="https://github.com/Abd00lmalik/anonimus" target="_blank" rel="noopener noreferrer">
+                  <Button variant="secondary" style={{ textDecoration: 'none' }}>GitHub</Button>
+                </a>
                 <Button variant="ghost">Open Dashboard</Button>
               </div>
             </div>

@@ -126,7 +126,7 @@ export function DisclosureReviewPage() {
             fontFamily: 'var(--font-mono)', fontSize: '0.6875rem', letterSpacing: '0.06em',
             textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 'var(--space-3)',
           }}>
-            Step 2 of 4 — Review Disclosure
+            Step 2 of 4, Review Disclosure
           </div>
           <h1 style={{
             fontFamily: 'var(--font-display)', fontSize: 'clamp(1.5rem, 3vw, 2rem)',

@@ -531,7 +531,7 @@ export function VerificationPage() {
             color: 'var(--accent)',
             marginBottom: 'var(--space-3)',
           }}>
-            {livenessPassed ? 'Processing' : 'Step 3 of 4'} — {livenessPassed ? 'Generating Proof' : 'Face Verification'}
+            {livenessPassed ? 'Processing' : 'Step 3 of 4'}, {livenessPassed ? 'Generating Proof' : 'Face Verification'}
           </div>
           <h1 style={{
             fontFamily: 'var(--font-display)',

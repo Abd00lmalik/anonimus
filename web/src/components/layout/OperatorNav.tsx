@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useOperator } from '../../contexts/OperatorContext'
+import { Logo } from '../ui/Logo'
 
 export function OperatorNav() {
   const navigate = useNavigate()
@@ -50,9 +51,7 @@ export function OperatorNav() {
           style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', cursor: 'pointer' }}
           onClick={() => navigate(isAuthenticated ? '/operator/workspace' : '/')}
         >
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" style={{ opacity: 0.7 }}>
-            <circle cx="14" cy="14" r="12" stroke="#C6A35A" strokeWidth="1.2" strokeDasharray="68 8" />
-          </svg>
+          <Logo size={28} />
           <span style={{
             fontFamily: 'var(--font-display)',
             fontSize: '1.25rem',

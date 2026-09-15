@@ -116,14 +116,30 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     setError(null)
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 800))
-
-      const addresses: Record<string, string> = {
-        lace: 'mn_shielded_test1qr7refxk9z0p3qlj0d8a6c5t2s1m8n4k7j2x5w9',
-        '1am': 'mn_shielded_test1qz8ahtm4p2k7j3n5w6r9c0s1t3u4v5x8y2m6p1',
+      // Use the real Midnight DApp Connector API
+      const midnight = (window as any).midnight
+      if (!midnight) {
+        throw new Error('No Midnight wallet found. Please install a Midnight wallet extension (Lace or 1AM).')
       }
 
-      const address = addresses[provider] || 'mn_shielded_test1...unknown'
+      // Find wallet by provider ID
+      const walletKey = provider === 'lace' ? 'mnLace' : provider === '1am' ? '1am' : provider
+      const walletApi = midnight[walletKey] || midnight.mnLace || midnight['1am']
+
+      if (!walletApi || typeof walletApi.connect !== 'function') {
+        throw new Error(`Wallet "${provider}" is not available. Please install the extension.`)
+      }
+
+      // Trigger the real wallet connection popup
+      const connectedAPI = await walletApi.connect('preprod')
+      const status = await connectedAPI.getConnectionStatus()
+      if (status.status !== 'connected') {
+        throw new Error('Wallet connection was rejected')
+      }
+
+      // Get real wallet address
+      const shieldedAddresses = await connectedAPI.getShieldedAddresses()
+      const address = shieldedAddresses.shieldedAddress
       const projectName = deriveProjectName(address)
 
       const identity: OperatorIdentity = {
@@ -136,9 +152,14 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
       setOperator(identity)
       setStage('connected')
       localStorage.setItem('anonimus-operator-session', JSON.stringify(identity))
-    } catch {
-      setStage('unavailable')
-      setError('Wallet connection is unavailable. Please try again.')
+    } catch (err: any) {
+      if (err.message?.includes('cancelled') || err.message?.includes('rejected') || err.message?.includes('declined')) {
+        setStage('rejected')
+        setError('Wallet connection was declined. Please try again.')
+      } else {
+        setStage('unavailable')
+        setError(err.message || 'Wallet connection is unavailable. Please try again.')
+      }
     }
   }, [])
 

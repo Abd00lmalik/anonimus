@@ -139,7 +139,7 @@ export function DAppDisclosurePage() {
             color: 'var(--accent)',
             marginBottom: 'var(--space-3)',
           }}>
-            Step 2 of 4 — Review Disclosure
+            Step 2 of 4, Review Disclosure
           </div>
           <h1 style={{
             fontFamily: 'var(--font-display)',

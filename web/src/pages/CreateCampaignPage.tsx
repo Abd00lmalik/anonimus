@@ -190,7 +190,7 @@ export function CreateCampaignPage() {
             maxWidth: 520,
           }}>
             Set up a verification scope where people can prove humanity and register once.
-            You will receive proof of verification — never the person behind it.
+            You will receive proof of verification, never the person behind it.
           </p>
         </div>
 

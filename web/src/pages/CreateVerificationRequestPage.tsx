@@ -181,8 +181,8 @@ export function CreateVerificationRequestPage() {
             lineHeight: 1.6,
             maxWidth: 520,
           }}>
-            Define a verification scope for your DApp. Users will verify privately —
-            you will receive a signed cryptographic receipt.
+            Define a verification scope for your DApp. Users will verify privately.
+            You will receive a signed cryptographic receipt.
           </p>
         </div>
 

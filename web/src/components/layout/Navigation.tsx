@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { Logo } from '../ui/Logo'
 
 export function Navigation() {
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -39,10 +40,7 @@ export function Navigation() {
         justifyContent: 'space-between',
       }}>
         <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          {/* Interrupted circle logo mark */}
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" style={{ opacity: 0.7 }}>
-            <circle cx="14" cy="14" r="12" stroke="#C6A35A" strokeWidth="1.2" strokeDasharray="68 8" />
-          </svg>
+          <Logo size={28} />
           <span style={{
             fontFamily: 'var(--font-display)',
             fontSize: '1.25rem',
