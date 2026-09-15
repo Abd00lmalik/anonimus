@@ -1,42 +1,87 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useOperator } from '../contexts/OperatorContext'
 import { Button } from '../components/ui/Button'
 import { Logo } from '../components/ui/Logo'
 
-const WALLETS = [
-  {
-    id: 'lace',
-    name: 'Lace',
-    description: 'Lightweight wallet for Midnight',
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-        <rect width="32" height="32" rx="8" fill="#1a1a2e" />
-        <circle cx="16" cy="16" r="10" stroke="#C6A35A" strokeWidth="1.5" />
-        <path d="M12 16L16 12L20 16L16 20Z" stroke="#C6A35A" strokeWidth="1" fill="none" />
-      </svg>
-    ),
-  },
-  {
-    id: '1am',
-    name: '1AM Wallet',
-    description: 'Privacy-first Midnight wallet',
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-        <rect width="32" height="32" rx="8" fill="#1a1a2e" />
-        <text x="16" y="20" textAnchor="middle" fill="#C6A35A" fontFamily="var(--font-mono)" fontSize="12" fontWeight="700">1A</text>
-      </svg>
-    ),
-  },
-]
+const NETWORK_ID = 'preprod'
 
-function WalletModal({ open, onClose, onConnect, connectingProvider }: {
+const FALLBACK_WALLETS: Record<string, { name: string; icon: string; installUrl: string }> = {
+  lace: { name: 'Lace', icon: '/wallets/lace.svg', installUrl: 'https://chromewebstore.google.com/detail/lace-beta/hgeekaiplokcnmakghbdfbgnlfheichg' },
+  '1am': { name: '1AM Wallet', icon: '/wallets/1am.svg', installUrl: 'https://chromewebstore.google.com/detail/1am/bphnkdkcnfhompoegfpgnkidcjfbojjp' },
+}
+
+interface DetectedWallet {
+  key: string
+  name: string
+  icon: string
+  api: any
+  installUrl: string
+}
+
+function discoverWallets(): DetectedWallet[] {
+  const midnight = (window as any).midnight
+  if (!midnight || typeof midnight !== 'object') {
+    console.log('[anonimus] window.midnight is missing — no wallet extension detected')
+    return []
+  }
+
+  console.log('[anonimus] window.midnight keys:', Object.keys(midnight))
+
+  const wallets: DetectedWallet[] = []
+  const seen = new Set<string>()
+
+  // 1. Try friendly keys first
+  for (const key of ['mnLace', 'lace', '1am']) {
+    const api = midnight[key]
+    if (api && typeof api === 'object' && typeof api.connect === 'function' && !seen.has(key)) {
+      const fallback = FALLBACK_WALLETS[key] || FALLBACK_WALLETS['lace']
+      wallets.push({
+        key,
+        name: api.name || fallback.name,
+        icon: api.icon || fallback.icon,
+        api,
+        installUrl: fallback.installUrl,
+      })
+      seen.add(key)
+    }
+  }
+
+  // 2. Scan all values for unknown wallets
+  for (const [key, api] of Object.entries(midnight)) {
+    if (seen.has(key)) continue
+    const a = api as any
+    if (a && typeof a === 'object' && typeof a.connect === 'function' && a.name) {
+      wallets.push({
+        key,
+        name: a.name,
+        icon: a.icon || `/wallets/${key}.svg`,
+        api: a,
+        installUrl: '#',
+      })
+      seen.add(key)
+    }
+  }
+
+  return wallets
+}
+
+function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
   open: boolean
   onClose: () => void
-  onConnect: (id: string) => void
-  connectingProvider: string | null
+  onConnect: (wallet: DetectedWallet) => void
+  connectingKey: string | null
+  error: string | null
 }) {
+  const [wallets, setWallets] = useState<DetectedWallet[]>([])
+
+  useEffect(() => {
+    if (open) {
+      setWallets(discoverWallets())
+    }
+  }, [open])
+
   return (
     <AnimatePresence>
       {open && (
@@ -118,65 +163,129 @@ function WalletModal({ open, onClose, onConnect, connectingProvider }: {
               </p>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-              {WALLETS.map(wallet => (
-                <motion.button
-                  key={wallet.id}
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={() => onConnect(wallet.id)}
-                  disabled={connectingProvider !== null}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--space-4)',
-                    padding: 'var(--space-4) var(--space-5)',
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-md)',
-                    cursor: connectingProvider ? 'not-allowed' : 'pointer',
-                    opacity: connectingProvider && connectingProvider !== wallet.id ? 0.4 : 1,
-                    textAlign: 'left',
-                    width: '100%',
-                    transition: 'all var(--duration-fast) var(--ease-out)',
-                  }}
-                >
-                  {wallet.icon}
-                  <div>
-                    <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-                      {wallet.name}
-                    </div>
-                    <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-                      {wallet.description}
-                    </div>
-                  </div>
-                  {connectingProvider === wallet.id && (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ marginLeft: 'auto', animation: 'spin 1s linear infinite' }}>
-                      <circle cx="8" cy="8" r="6" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="28 8" />
-                    </svg>
-                  )}
-                </motion.button>
-              ))}
-            </div>
+            {wallets.length === 0 ? (
+              <div style={{
+                textAlign: 'center',
+                padding: 'var(--space-8) 0',
+              }}>
+                <p style={{
+                  fontFamily: 'var(--font-ui)',
+                  fontSize: '0.9375rem',
+                  color: 'var(--text-secondary)',
+                  marginBottom: 'var(--space-4)',
+                }}>
+                  No Midnight wallet found
+                </p>
+                <p style={{
+                  fontFamily: 'var(--font-ui)',
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-muted)',
+                  marginBottom: 'var(--space-6)',
+                  lineHeight: 1.5,
+                }}>
+                  Install a wallet extension to sign in.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {Object.entries(FALLBACK_WALLETS).map(([key, fb]) => (
+                    <a
+                      key={key}
+                      href={fb.installUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-4)',
+                        padding: 'var(--space-4) var(--space-5)',
+                        background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        textDecoration: 'none',
+                        transition: 'all var(--duration-fast) var(--ease-out)',
+                      }}
+                    >
+                      <img src={fb.icon} alt="" style={{ width: 32, height: 32, borderRadius: 6 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                          Install {fb.name}
+                        </div>
+                      </div>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: 'var(--text-muted)' }}>
+                        <path d="M4 10L10 4M10 4H5M10 4V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                {wallets.map((w) => {
+                  const isConnecting = connectingKey === w.key
+                  return (
+                    <motion.button
+                      key={w.key}
+                      whileHover={connectingKey ? undefined : { scale: 1.01 }}
+                      whileTap={connectingKey ? undefined : { scale: 0.99 }}
+                      onClick={() => onConnect(w)}
+                      disabled={connectingKey !== null}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-4)',
+                        padding: 'var(--space-4) var(--space-5)',
+                        background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        cursor: connectingKey ? 'not-allowed' : 'pointer',
+                        opacity: connectingKey && !isConnecting ? 0.4 : 1,
+                        textAlign: 'left',
+                        width: '100%',
+                        transition: 'all var(--duration-fast) var(--ease-out)',
+                      }}
+                    >
+                      <img
+                        src={w.icon}
+                        alt=""
+                        style={{ width: 32, height: 32, borderRadius: 6 }}
+                        onError={(e) => {
+                          // If icon URL fails, try fallback
+                          const fb = FALLBACK_WALLETS[w.key] || FALLBACK_WALLETS['lace']
+                          if (fb && e.currentTarget.src !== fb.icon) {
+                            e.currentTarget.src = fb.icon
+                          }
+                        }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                          {w.name}
+                        </div>
+                        <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                          Midnight wallet
+                        </div>
+                      </div>
+                      {isConnecting && (
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
+                          <circle cx="8" cy="8" r="6" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="28 8" />
+                        </svg>
+                      )}
+                    </motion.button>
+                  )
+                })}
+              </div>
+            )}
 
-            <p style={{
-              fontFamily: 'var(--font-ui)',
-              fontSize: '0.75rem',
-              color: 'var(--text-muted)',
-              textAlign: 'center',
-              marginTop: 'var(--space-6)',
-              lineHeight: 1.5,
-            }}>
-              No Midnight wallet found?{' '}
-              <a
-                href="https://docs.midnight.network/wallets"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: 'var(--accent)', textDecoration: 'underline', textDecorationColor: 'var(--accent-muted)' }}
-              >
-                Install one
-              </a>
-            </p>
+            {error && (
+              <p style={{
+                fontFamily: 'var(--font-ui)',
+                fontSize: '0.8125rem',
+                color: 'var(--error)',
+                textAlign: 'center',
+                marginTop: 'var(--space-4)',
+                lineHeight: 1.5,
+              }}>
+                {error}
+              </p>
+            )}
 
             <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
           </motion.div>
@@ -190,17 +299,40 @@ export function OperatorEntryPage() {
   const navigate = useNavigate()
   const { stage, operator, connect } = useOperator()
   const [modalOpen, setModalOpen] = useState(false)
-  const [selectedWallet, setSelectedWallet] = useState<string | null>(null)
+  const [connectingKey, setConnectingKey] = useState<string | null>(null)
+  const [modalError, setModalError] = useState<string | null>(null)
 
   if (stage === 'connected' && operator) {
     navigate('/operator/workspace', { replace: true })
     return null
   }
 
-  const handleConnect = async (provider: string) => {
-    setSelectedWallet(provider)
-    await connect(provider)
-  }
+  const handleConnect = useCallback(async (wallet: DetectedWallet) => {
+    setConnectingKey(wallet.key)
+    setModalError(null)
+
+    try {
+      // connect() is the FIRST statement — no await before it
+      const connectedApi = await wallet.api.connect(NETWORK_ID)
+      const status = await connectedApi.getConnectionStatus()
+      if (status.status !== 'connected') {
+        throw new Error('Wallet connection was rejected')
+      }
+
+      setConnectingKey(null)
+      setModalOpen(false)
+
+      // Use the context's connect which will handle state + storage
+      await connect(wallet.key)
+    } catch (err: any) {
+      setConnectingKey(null)
+      if (err?.message?.includes('cancelled') || err?.message?.includes('rejected') || err?.message?.includes('declined')) {
+        setModalError('Connection was declined. Please try again.')
+      } else {
+        setModalError(err?.message || 'Connection failed. Please try again.')
+      }
+    }
+  }, [connect])
 
   return (
     <div style={{
@@ -215,7 +347,6 @@ export function OperatorEntryPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         >
-          {/* Hero */}
           <div style={{ textAlign: 'center', marginBottom: 'var(--space-12)' }}>
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
@@ -248,7 +379,6 @@ export function OperatorEntryPage() {
             </p>
           </div>
 
-          {/* How it works */}
           <div style={{
             background: 'var(--bg-surface)',
             border: '1px solid var(--border)',
@@ -300,7 +430,6 @@ export function OperatorEntryPage() {
             </div>
           </div>
 
-          {/* Privacy guarantee */}
           <div style={{
             background: 'rgba(143, 191, 154, 0.04)',
             border: '1px solid rgba(143, 191, 154, 0.15)',
@@ -327,9 +456,8 @@ export function OperatorEntryPage() {
             </div>
           </div>
 
-          {/* Sign in button */}
           <div style={{ textAlign: 'center' }}>
-            <Button size="lg" onClick={() => setModalOpen(true)}>
+            <Button size="lg" onClick={() => { setModalOpen(true); setModalError(null) }}>
               Sign in with Midnight
             </Button>
           </div>
@@ -362,7 +490,7 @@ export function OperatorEntryPage() {
             fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)',
             color: 'var(--text-primary)',
             marginBottom: 'var(--space-2)',
-          }}>Connecting to {WALLETS.find(w => w.id === selectedWallet)?.name || selectedWallet}</h2>
+          }}>Connecting to wallet</h2>
           <p style={{
             fontFamily: 'var(--font-ui)',
             fontSize: '0.9375rem',
@@ -413,7 +541,7 @@ export function OperatorEntryPage() {
           }}>
             Connection was declined. Please try again.
           </p>
-          <Button variant="primary" size="md" onClick={() => setModalOpen(true)}>
+          <Button variant="primary" size="md" onClick={() => { setModalOpen(true); setModalError(null) }}>
             Try again
           </Button>
         </motion.div>
@@ -461,12 +589,12 @@ export function OperatorEntryPage() {
         </motion.div>
       )}
 
-      {/* Wallet chooser modal */}
       <WalletModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { setModalOpen(false); setModalError(null) }}
         onConnect={handleConnect}
-        connectingProvider={stage === 'connecting' ? selectedWallet : null}
+        connectingKey={connectingKey}
+        error={modalError}
       />
     </div>
   )
