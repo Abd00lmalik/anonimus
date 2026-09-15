@@ -92,6 +92,7 @@ export class MidnightService {
   private providers!: PohProviders;
   private contractAddress!: ContractAddress;
   private verifier!: TestVerifier;
+  private adminSecretKey!: Uint8Array;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
 
@@ -207,6 +208,7 @@ export class MidnightService {
     for (let txAttempt = 1; txAttempt <= MAX_TX_RETRIES; txAttempt++) {
       try {
         const adminSecretKey = crypto.getRandomValues(new Uint8Array(32));
+        this.adminSecretKey = adminSecretKey;
         const adminState: PohPrivateState = {
           secretKey: adminSecretKey,
           credentialSalt: new Uint8Array(32),
@@ -252,7 +254,7 @@ export class MidnightService {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         await this._setPrivateState('poh-admin-state', {
-          secretKey: crypto.getRandomValues(new Uint8Array(32)),
+          secretKey: this.adminSecretKey,
           credentialSalt: new Uint8Array(32),
           verifierSigningKey: 0n,
           attestation: null,
@@ -317,7 +319,7 @@ export class MidnightService {
 
     // Step 4: Enroll credential (admin tx — inserts commitment into Merkle tree)
     const adminState: PohPrivateState = {
-      secretKey: crypto.getRandomValues(new Uint8Array(32)),
+      secretKey: this.adminSecretKey,
       credentialSalt: new Uint8Array(32),
       verifierSigningKey: 0n,
       attestation: null,
@@ -399,7 +401,7 @@ export class MidnightService {
     // This inserts the commitment into the Merkle registry on-chain.
     // The participant's wallet does NOT sign this — it's an admin operation.
     const adminState: PohPrivateState = {
-      secretKey: crypto.getRandomValues(new Uint8Array(32)),
+      secretKey: this.adminSecretKey,
       credentialSalt: new Uint8Array(32),
       verifierSigningKey: 0n,
       attestation: null,
