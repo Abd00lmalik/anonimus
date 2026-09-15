@@ -146,6 +146,8 @@ export function CreateCampaignPage() {
     endDate: '',
     purposeType: 'community',
   })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const update = (field: keyof CampaignCreateInput, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -153,13 +155,27 @@ export function CreateCampaignPage() {
 
   const isValid = form.title.trim() && form.organizer.trim() && form.scope.trim() && form.startDate && form.endDate && new Date(form.endDate) > new Date(form.startDate)
 
+  const missingFields = [
+    !form.title.trim() && 'Campaign name',
+    !form.organizer.trim() && 'Project / organizer',
+    !form.scope.trim() && 'Scope identifier',
+    !form.startDate && 'Start date',
+    !form.endDate && 'End date',
+    form.startDate && form.endDate && new Date(form.endDate) <= new Date(form.startDate) && 'End date must be after start date',
+  ].filter(Boolean) as string[]
+
   const handleCreate = async () => {
     if (!isValid) return
+    setSubmitting(true)
+    setError(null)
     try {
       const created = await createCampaign(form)
       navigate(`/campaigns/${created.id}/created`)
     } catch (err: any) {
       console.error('Failed to create campaign:', err)
+      setError(err?.message || 'Failed to create campaign. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -334,10 +350,10 @@ export function CreateCampaignPage() {
             variant="primary"
             size="lg"
             onClick={handleCreate}
-            disabled={!isValid}
+            disabled={!isValid || submitting}
             style={{ flex: 1 }}
           >
-            Create Campaign
+            {submitting ? 'Creating...' : 'Create Campaign'}
           </Button>
           <Button
             variant="secondary"
@@ -348,6 +364,41 @@ export function CreateCampaignPage() {
             Cancel
           </Button>
         </div>
+
+        {error && (
+          <div style={{
+            marginTop: 'var(--space-4)',
+            padding: 'var(--space-4)',
+            background: 'rgba(201, 122, 114, 0.08)',
+            border: '1px solid rgba(201, 122, 114, 0.2)',
+            borderRadius: 'var(--radius-md)',
+          }}>
+            <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--error)', lineHeight: 1.5 }}>
+              {error}
+            </p>
+          </div>
+        )}
+
+        {!isValid && missingFields.length > 0 && (
+          <div style={{
+            marginTop: 'var(--space-4)',
+            padding: 'var(--space-4)',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+          }}>
+            <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: 'var(--space-2)' }}>
+              Please fill in:
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 'var(--space-5)', listStyleType: 'disc' }}>
+              {missingFields.map((f, i) => (
+                <li key={i} style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-1)' }}>
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </motion.div>
     </div>
   )
