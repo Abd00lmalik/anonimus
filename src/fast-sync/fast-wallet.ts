@@ -187,6 +187,7 @@ export async function assembleWallet(
 
   const config = {
     networkId,
+    forks: { v9: 0n as bigint },
     indexerClientConnection: { indexerHttpUrl: env.indexer, indexerWsUrl: env.indexerWS },
     provingServerUrl: new URL(env.proofServer),
     relayURL: new URL(env.nodeWS),
