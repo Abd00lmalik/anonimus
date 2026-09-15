@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useOperator } from '../../contexts/OperatorContext'
@@ -30,13 +31,7 @@ function discoverWallets(): DetectedWallet[] {
     const api = midnight[key]
     if (api && typeof api === 'object' && typeof api.connect === 'function' && !seen.has(key)) {
       const fallback = FALLBACK_WALLETS[key] || FALLBACK_WALLETS['lace']
-      wallets.push({
-        key,
-        name: api.name || fallback.name,
-        icon: api.icon || fallback.icon,
-        api,
-        installUrl: fallback.installUrl,
-      })
+      wallets.push({ key, name: api.name || fallback.name, icon: api.icon || fallback.icon, api, installUrl: fallback.installUrl })
       seen.add(key)
     }
   }
@@ -45,13 +40,7 @@ function discoverWallets(): DetectedWallet[] {
     if (seen.has(key)) continue
     const a = api as any
     if (a && typeof a === 'object' && typeof a.connect === 'function' && a.name) {
-      wallets.push({
-        key,
-        name: a.name,
-        icon: a.icon || `/wallets/${key}.svg`,
-        api: a,
-        installUrl: '#',
-      })
+      wallets.push({ key, name: a.name, icon: a.icon || `/wallets/${key}.svg`, api: a, installUrl: '#' })
       seen.add(key)
     }
   }
@@ -72,7 +61,7 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
     if (open) setWallets(discoverWallets())
   }, [open])
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
@@ -84,9 +73,8 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 200,
-            background: 'rgba(0, 0, 0, 0.6)',
-            backdropFilter: 'blur(4px)',
+            zIndex: 80,
+            background: 'rgba(7, 8, 10, 0.72)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -104,8 +92,10 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
               border: '1px solid var(--border)',
               borderRadius: 'var(--radius-lg)',
               padding: 'var(--space-8)',
-              maxWidth: 440,
+              maxWidth: 420,
               width: '100%',
+              maxHeight: 'min(80vh, 560px)',
+              overflow: 'auto',
               position: 'relative',
             }}
           >
@@ -116,11 +106,8 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
                 position: 'absolute',
                 top: 'var(--space-4)',
                 right: 'var(--space-4)',
-                width: 32,
-                height: 32,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                width: 32, height: 32,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
                 borderRadius: 'var(--radius-sm)',
                 color: 'var(--text-muted)',
                 transition: 'color var(--duration-fast) var(--ease-out)',
@@ -134,63 +121,30 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
             </button>
 
             <div style={{ marginBottom: 'var(--space-6)' }}>
-              <h2 style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '1.5rem',
-                fontWeight: 400,
-                color: 'var(--text-primary)',
-                marginBottom: 'var(--space-2)',
-              }}>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 400, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
                 Sign in
               </h2>
-              <p style={{
-                fontFamily: 'var(--font-ui)',
-                fontSize: '0.8125rem',
-                color: 'var(--text-muted)',
-                lineHeight: 1.6,
-              }}>
+              <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
                 Your wallet is a handle for this project. It is not your name.
               </p>
             </div>
 
             {wallets.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 'var(--space-8) 0' }}>
-                <p style={{
-                  fontFamily: 'var(--font-ui)',
-                  fontSize: '0.9375rem',
-                  color: 'var(--text-secondary)',
-                  marginBottom: 'var(--space-4)',
-                }}>
-                  No Midnight wallet found
+              <div style={{ textAlign: 'center', padding: 'var(--space-4) 0' }}>
+                <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}>
+                  No Midnight wallet on this origin
                 </p>
-                <p style={{
-                  fontFamily: 'var(--font-ui)',
-                  fontSize: '0.8125rem',
-                  color: 'var(--text-muted)',
-                  marginBottom: 'var(--space-6)',
-                  lineHeight: 1.5,
-                }}>
+                <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: 'var(--space-6)', lineHeight: 1.5 }}>
                   Install a wallet extension to sign in.
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   {Object.entries(FALLBACK_WALLETS).map(([key, fb]) => (
-                    <a
-                      key={key}
-                      href={fb.installUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 'var(--space-4)',
-                        padding: 'var(--space-4) var(--space-5)',
-                        background: 'var(--bg-elevated)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 'var(--radius-md)',
-                        textDecoration: 'none',
-                        transition: 'all var(--duration-fast) var(--ease-out)',
-                      }}
-                    >
+                    <a key={key} href={fb.installUrl} target="_blank" rel="noopener noreferrer" style={{
+                      display: 'flex', alignItems: 'center', gap: 'var(--space-4)',
+                      padding: 'var(--space-4) var(--space-5)', background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
+                      textDecoration: 'none', transition: 'all var(--duration-fast) var(--ease-out)',
+                    }}>
                       <img src={fb.icon} alt="" style={{ width: 32, height: 32, borderRadius: 6 }} />
                       <div style={{ flex: 1 }}>
                         <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text-primary)' }}>
@@ -216,38 +170,24 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
                       onClick={() => onConnect(w)}
                       disabled={connectingKey !== null}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 'var(--space-4)',
-                        padding: 'var(--space-4) var(--space-5)',
-                        background: 'var(--bg-elevated)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 'var(--radius-md)',
+                        display: 'flex', alignItems: 'center', gap: 'var(--space-4)',
+                        padding: 'var(--space-4) var(--space-5)', background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
                         cursor: connectingKey ? 'not-allowed' : 'pointer',
                         opacity: connectingKey && !isConnecting ? 0.4 : 1,
-                        textAlign: 'left',
-                        width: '100%',
+                        textAlign: 'left', width: '100%',
                         transition: 'all var(--duration-fast) var(--ease-out)',
                       }}
                     >
-                      <img
-                        src={w.icon}
-                        alt=""
-                        style={{ width: 32, height: 32, borderRadius: 6 }}
+                      <img src={w.icon} alt="" style={{ width: 32, height: 32, borderRadius: 6 }}
                         onError={(e) => {
                           const fb = FALLBACK_WALLETS[w.key] || FALLBACK_WALLETS['lace']
-                          if (fb && e.currentTarget.src !== fb.icon) {
-                            e.currentTarget.src = fb.icon
-                          }
+                          if (fb && e.currentTarget.src !== window.location.origin + fb.icon) e.currentTarget.src = fb.icon
                         }}
                       />
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-                          {w.name}
-                        </div>
-                        <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-                          Midnight wallet
-                        </div>
+                        <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text-primary)' }}>{w.name}</div>
+                        <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Midnight wallet</div>
                       </div>
                       {isConnecting && (
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
@@ -261,14 +201,7 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
             )}
 
             {error && (
-              <p style={{
-                fontFamily: 'var(--font-ui)',
-                fontSize: '0.8125rem',
-                color: 'var(--error)',
-                textAlign: 'center',
-                marginTop: 'var(--space-4)',
-                lineHeight: 1.5,
-              }}>
+              <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', color: 'var(--error)', textAlign: 'center', marginTop: 'var(--space-4)', lineHeight: 1.5 }}>
                 {error}
               </p>
             )}
@@ -277,35 +210,52 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
+}
+
+function deriveProjectName(address: string): string {
+  return address.slice(0, 12) + '…'
 }
 
 export function OperatorNav() {
   const navigate = useNavigate()
-  const { operator, stage, connect } = useOperator()
+  const { operator, stage, setIdentity } = useOperator()
   const [modalOpen, setModalOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [connectingKey, setConnectingKey] = useState<string | null>(null)
   const [modalError, setModalError] = useState<string | null>(null)
 
-  const handleConnect = async (wallet: DetectedWallet) => {
+  const handleConnect = useCallback(async (wallet: DetectedWallet) => {
     setConnectingKey(wallet.key)
     setModalError(null)
     try {
-      await wallet.api.connect(NETWORK_ID)
+      const connected = await wallet.api.connect(NETWORK_ID)
+      const shieldedAddresses = await connected.getShieldedAddresses()
+      const address = shieldedAddresses.shieldedAddress
+
+      setIdentity({
+        walletAddress: address,
+        projectName: deriveProjectName(address),
+        connectedAt: new Date().toISOString(),
+        provider: wallet.key,
+      })
+
       setConnectingKey(null)
       setModalOpen(false)
-      await connect(wallet.key)
     } catch (err: any) {
       setConnectingKey(null)
-      if (err?.message?.includes('cancelled') || err?.message?.includes('rejected') || err?.message?.includes('declined')) {
+      const msg = err?.message || String(err)
+      if (msg.includes('cancelled') || msg.includes('rejected') || msg.includes('declined')) {
         setModalError('Connection was declined. Please try again.')
+      } else if (msg.includes('network') || msg.includes('Network')) {
+        setModalError(`This wallet is on a different Midnight network. ${msg}`)
       } else {
-        setModalError(err?.message || 'Connection failed. Please try again.')
+        setModalError(msg || 'Connection failed. Please try again.')
       }
     }
-  }
+  }, [setIdentity])
 
   return (
     <motion.nav
@@ -313,160 +263,80 @@ export function OperatorNav() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
       style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        backdropFilter: 'blur(16px)',
-        background: 'rgba(7, 8, 10, 0.5)',
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+        backdropFilter: 'blur(16px)', background: 'rgba(7, 8, 10, 0.5)',
         borderBottom: '1px solid var(--border)',
       }}
     >
       <div style={{
-        maxWidth: 'var(--max-width)',
-        margin: '0 auto',
-        padding: '0 var(--space-8)',
-        height: 'var(--nav-height)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        maxWidth: 'var(--max-width)', margin: '0 auto', padding: '0 var(--space-8)',
+        height: 'var(--nav-height)', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
         <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
           <Logo size={28} />
-          <span style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: '1.25rem',
-            letterSpacing: '0.08em',
-            color: 'var(--text-primary)',
-          }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', letterSpacing: '0.08em', color: 'var(--text-primary)' }}>
             ANONIMUS
           </span>
         </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-8)' }} className="operator-nav-links">
-          <Link
-            to="/"
-            style={{
-              fontFamily: 'var(--font-ui)',
-              fontSize: '0.8125rem',
-              fontWeight: 400,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              color: 'var(--text-muted)',
-              transition: 'color var(--duration-fast) var(--ease-out)',
-            }}
+          <Link to="/" style={{
+            fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', fontWeight: 400, letterSpacing: '0.04em',
+            textTransform: 'uppercase', color: 'var(--text-muted)',
+            transition: 'color var(--duration-fast) var(--ease-out)',
+          }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-          >
-            Home
-          </Link>
+          >Home</Link>
 
           {stage === 'connected' && operator ? (
             <>
-              <Link
-                to="/operator/workspace"
-                style={{
-                  fontFamily: 'var(--font-ui)',
-                  fontSize: '0.8125rem',
-                  fontWeight: 400,
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text-muted)',
-                  transition: 'color var(--duration-fast) var(--ease-out)',
-                }}
+              <Link to="/operator/workspace" style={{
+                fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', fontWeight: 400, letterSpacing: '0.04em',
+                textTransform: 'uppercase', color: 'var(--text-muted)',
+                transition: 'color var(--duration-fast) var(--ease-out)',
+              }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
                 onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-              >
-                Dashboard
-              </Link>
-              <button
-                onClick={() => navigate('/campaigns/create')}
-                style={{
-                  fontFamily: 'var(--font-ui)',
-                  fontSize: '0.8125rem',
-                  fontWeight: 400,
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text-muted)',
-                  transition: 'color var(--duration-fast) var(--ease-out)',
-                }}
+              >Dashboard</Link>
+              <button onClick={() => navigate('/campaigns/create')} style={{
+                fontFamily: 'var(--font-ui)', fontSize: '0.8125rem', fontWeight: 400, letterSpacing: '0.04em',
+                textTransform: 'uppercase', color: 'var(--text-muted)',
+                transition: 'color var(--duration-fast) var(--ease-out)',
+              }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
                 onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-              >
-                Create Campaign
-              </button>
-              <span style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '0.8125rem',
-                color: 'var(--text-secondary)',
-                letterSpacing: '0.02em',
-              }}>
+              >Create Campaign</button>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8125rem', color: 'var(--text-secondary)', letterSpacing: '0.02em' }}>
                 {operator.walletAddress.slice(0, 6)}...{operator.walletAddress.slice(-4)}
               </span>
             </>
           ) : (
-            <button
-              onClick={() => { setModalOpen(true); setModalError(null) }}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '0.8125rem',
-                fontWeight: 500,
-                height: 44,
-                padding: '0 20px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'transparent',
-                border: '1px solid rgba(243, 238, 228, 0.16)',
-                color: 'var(--text-primary)',
-                transition: 'all var(--duration-fast) var(--ease-out)',
-                letterSpacing: '0.02em',
-                cursor: 'pointer',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-hover)'
-                e.currentTarget.style.background = 'var(--bg-elevated)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(243, 238, 228, 0.16)'
-                e.currentTarget.style.background = 'transparent'
-              }}
-            >
-              Sign in
-            </button>
+            <button onClick={() => { setModalOpen(true); setModalError(null) }} style={{
+              fontFamily: 'var(--font-mono)', fontSize: '0.8125rem', fontWeight: 500, height: 44, padding: '0 20px',
+              borderRadius: 'var(--radius-sm)', background: 'transparent',
+              border: '1px solid rgba(243, 238, 228, 0.16)', color: 'var(--text-primary)',
+              transition: 'all var(--duration-fast) var(--ease-out)', letterSpacing: '0.02em', cursor: 'pointer',
+            }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-hover)'; e.currentTarget.style.background = 'var(--bg-elevated)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(243, 238, 228, 0.16)'; e.currentTarget.style.background = 'transparent' }}
+            >Sign in</button>
           )}
         </div>
 
-        <button
-          className="operator-mobile-btn"
-          style={{
-            display: 'none',
-            width: 44,
-            height: 44,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-primary)',
-          }}
-          onClick={() => setMobileOpen(!mobileOpen)}
-          aria-label="Toggle navigation menu"
-        >
+        <button className="operator-mobile-btn" style={{
+          display: 'none', width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
+          borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
+        }} onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle navigation menu">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            {mobileOpen ? (
-              <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            ) : (
-              <path d="M3 6H17M3 10H17M3 14H17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            )}
+            {mobileOpen ? <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              : <path d="M3 6H17M3 10H17M3 14H17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />}
           </svg>
         </button>
       </div>
 
-      <WalletModal
-        open={modalOpen}
-        onClose={() => { setModalOpen(false); setModalError(null) }}
-        onConnect={handleConnect}
-        connectingKey={connectingKey}
-        error={modalError}
-      />
+      <WalletModal open={modalOpen} onClose={() => { setModalOpen(false); setModalError(null) }}
+        onConnect={handleConnect} connectingKey={connectingKey} error={modalError} />
 
       <style>{`
         @media (max-width: 768px) {

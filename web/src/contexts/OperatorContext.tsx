@@ -34,6 +34,7 @@ interface OperatorContextType {
   operator: OperatorIdentity | null
   error: string | null
   connect: (provider: string) => Promise<void>
+  setIdentity: (identity: OperatorIdentity) => void
   disconnect: () => void
   retry: () => void
 
@@ -178,6 +179,12 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     setError(null)
   }, [])
 
+  const setIdentity = useCallback((identity: OperatorIdentity) => {
+    setOperator(identity)
+    setStage('connected')
+    localStorage.setItem('anonimus-operator-session', JSON.stringify(identity))
+  }, [])
+
   // ── Campaign operations (real API) ──
 
   const loadCampaigns = useCallback(async () => {
@@ -250,6 +257,7 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
       operator,
       error,
       connect,
+      setIdentity,
       disconnect,
       retry,
       campaigns,

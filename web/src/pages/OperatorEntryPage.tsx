@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useOperator } from '../contexts/OperatorContext'
@@ -23,7 +24,7 @@ interface DetectedWallet {
 function discoverWallets(): DetectedWallet[] {
   const midnight = (window as any).midnight
   if (!midnight || typeof midnight !== 'object') {
-    console.log('[anonimus] window.midnight is missing — no wallet extension detected')
+    console.log('[anonimus] window.midnight missing — no wallet extension')
     return []
   }
 
@@ -32,7 +33,7 @@ function discoverWallets(): DetectedWallet[] {
   const wallets: DetectedWallet[] = []
   const seen = new Set<string>()
 
-  // 1. Try friendly keys first
+  // Friendly keys first
   for (const key of ['mnLace', 'lace', '1am']) {
     const api = midnight[key]
     if (api && typeof api === 'object' && typeof api.connect === 'function' && !seen.has(key)) {
@@ -48,7 +49,7 @@ function discoverWallets(): DetectedWallet[] {
     }
   }
 
-  // 2. Scan all values for unknown wallets
+  // Scan all values for unknown wallets
   for (const [key, api] of Object.entries(midnight)) {
     if (seen.has(key)) continue
     const a = api as any
@@ -77,12 +78,10 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
   const [wallets, setWallets] = useState<DetectedWallet[]>([])
 
   useEffect(() => {
-    if (open) {
-      setWallets(discoverWallets())
-    }
+    if (open) setWallets(discoverWallets())
   }, [open])
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
@@ -94,9 +93,8 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 200,
-            background: 'rgba(0, 0, 0, 0.6)',
-            backdropFilter: 'blur(4px)',
+            zIndex: 80,
+            background: 'rgba(7, 8, 10, 0.72)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -114,8 +112,10 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
               border: '1px solid var(--border)',
               borderRadius: 'var(--radius-lg)',
               padding: 'var(--space-8)',
-              maxWidth: 440,
+              maxWidth: 420,
               width: '100%',
+              maxHeight: 'min(80vh, 560px)',
+              overflow: 'auto',
               position: 'relative',
             }}
           >
@@ -164,17 +164,14 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
             </div>
 
             {wallets.length === 0 ? (
-              <div style={{
-                textAlign: 'center',
-                padding: 'var(--space-8) 0',
-              }}>
+              <div style={{ textAlign: 'center', padding: 'var(--space-4) 0' }}>
                 <p style={{
                   fontFamily: 'var(--font-ui)',
                   fontSize: '0.9375rem',
                   color: 'var(--text-secondary)',
-                  marginBottom: 'var(--space-4)',
+                  marginBottom: 'var(--space-2)',
                 }}>
-                  No Midnight wallet found
+                  No Midnight wallet on this origin
                 </p>
                 <p style={{
                   fontFamily: 'var(--font-ui)',
@@ -248,9 +245,8 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
                         alt=""
                         style={{ width: 32, height: 32, borderRadius: 6 }}
                         onError={(e) => {
-                          // If icon URL fails, try fallback
                           const fb = FALLBACK_WALLETS[w.key] || FALLBACK_WALLETS['lace']
-                          if (fb && e.currentTarget.src !== fb.icon) {
+                          if (fb && e.currentTarget.src !== window.location.origin + fb.icon) {
                             e.currentTarget.src = fb.icon
                           }
                         }}
@@ -291,13 +287,18 @@ function WalletModal({ open, onClose, onConnect, connectingKey, error }: {
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
+}
+
+function deriveProjectName(address: string): string {
+  return address.slice(0, 12) + '…'
 }
 
 export function OperatorEntryPage() {
   const navigate = useNavigate()
-  const { stage, operator, connect } = useOperator()
+  const { stage, operator, setIdentity } = useOperator()
   const [modalOpen, setModalOpen] = useState(false)
   const [connectingKey, setConnectingKey] = useState<string | null>(null)
   const [modalError, setModalError] = useState<string | null>(null)
@@ -312,27 +313,37 @@ export function OperatorEntryPage() {
     setModalError(null)
 
     try {
-      // connect() is the FIRST statement — no await before it
-      const connectedApi = await wallet.api.connect(NETWORK_ID)
-      const status = await connectedApi.getConnectionStatus()
-      if (status.status !== 'connected') {
-        throw new Error('Wallet connection was rejected')
-      }
+      // FIRST await — no fetch, no enable(), no state update before this
+      const connected = await wallet.api.connect(NETWORK_ID)
+
+      // Read addresses from the ConnectedAPI
+      const shieldedAddresses = await connected.getShieldedAddresses()
+      const address = shieldedAddresses.shieldedAddress
+
+      // Store identity in context
+      setIdentity({
+        walletAddress: address,
+        projectName: deriveProjectName(address),
+        connectedAt: new Date().toISOString(),
+        provider: wallet.key,
+      })
 
       setConnectingKey(null)
       setModalOpen(false)
-
-      // Use the context's connect which will handle state + storage
-      await connect(wallet.key)
     } catch (err: any) {
       setConnectingKey(null)
-      if (err?.message?.includes('cancelled') || err?.message?.includes('rejected') || err?.message?.includes('declined')) {
+
+      const msg = err?.message || String(err)
+
+      if (msg.includes('cancelled') || msg.includes('rejected') || msg.includes('declined')) {
         setModalError('Connection was declined. Please try again.')
+      } else if (msg.includes('network') || msg.includes('Network')) {
+        setModalError(`This wallet is on a different Midnight network. ${msg}`)
       } else {
-        setModalError(err?.message || 'Connection failed. Please try again.')
+        setModalError(msg || 'Connection failed. Please try again.')
       }
     }
-  }, [connect])
+  }, [setIdentity])
 
   return (
     <div style={{
@@ -340,7 +351,7 @@ export function OperatorEntryPage() {
       margin: '0 auto',
       padding: 'calc(var(--nav-height) + var(--space-12)) var(--space-8) var(--space-16)',
     }}>
-      {/* Idle state: sign-in gate */}
+      {/* Idle state */}
       {stage === 'idle' && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -472,30 +483,17 @@ export function OperatorEntryPage() {
           style={{ textAlign: 'center', paddingTop: 'var(--space-24)' }}
         >
           <div style={{
-            width: 64,
-            height: 64,
-            margin: '0 auto var(--space-6)',
-            borderRadius: '50%',
-            background: 'var(--accent-muted)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            width: 64, height: 64, margin: '0 auto var(--space-6)', borderRadius: '50%',
+            background: 'var(--accent-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <svg width="28" height="28" viewBox="0 0 28 28" fill="none" style={{ animation: 'spin 1.2s linear infinite' }}>
               <circle cx="14" cy="14" r="11" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="50 14" />
             </svg>
           </div>
-          <h2 style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)',
-            color: 'var(--text-primary)',
-            marginBottom: 'var(--space-2)',
-          }}>Connecting to wallet</h2>
-          <p style={{
-            fontFamily: 'var(--font-ui)',
-            fontSize: '0.9375rem',
-            color: 'var(--text-muted)',
-          }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)', color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+            Connecting to wallet
+          </h2>
+          <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', color: 'var(--text-muted)' }}>
             Confirm the connection in your wallet extension.
           </p>
           <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
@@ -510,35 +508,18 @@ export function OperatorEntryPage() {
           style={{ textAlign: 'center', paddingTop: 'var(--space-24)' }}
         >
           <div style={{
-            width: 64,
-            height: 64,
-            margin: '0 auto var(--space-6)',
-            borderRadius: '50%',
-            background: 'rgba(201, 122, 114, 0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            width: 64, height: 64, margin: '0 auto var(--space-6)', borderRadius: '50%',
+            background: 'rgba(201, 122, 114, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
               <circle cx="14" cy="14" r="11" stroke="var(--error)" strokeWidth="1.5" />
               <path d="M10 10L18 18M18 10L10 18" stroke="var(--error)" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </div>
-          <h2 style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)',
-            color: 'var(--text-primary)',
-            marginBottom: 'var(--space-2)',
-          }}>Connection declined</h2>
-          <p style={{
-            fontFamily: 'var(--font-ui)',
-            fontSize: '0.9375rem',
-            color: 'var(--text-muted)',
-            marginBottom: 'var(--space-6)',
-            maxWidth: 400,
-            margin: '0 auto var(--space-6)',
-            lineHeight: 1.6,
-          }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)', color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+            Connection declined
+          </h2>
+          <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto var(--space-6)', lineHeight: 1.6 }}>
             Connection was declined. Please try again.
           </p>
           <Button variant="primary" size="md" onClick={() => { setModalOpen(true); setModalError(null) }}>
@@ -555,14 +536,8 @@ export function OperatorEntryPage() {
           style={{ textAlign: 'center', paddingTop: 'var(--space-24)' }}
         >
           <div style={{
-            width: 64,
-            height: 64,
-            margin: '0 auto var(--space-6)',
-            borderRadius: '50%',
-            background: 'var(--bg-elevated)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            width: 64, height: 64, margin: '0 auto var(--space-6)', borderRadius: '50%',
+            background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
               <circle cx="14" cy="14" r="11" stroke="var(--text-muted)" strokeWidth="1.5" strokeDasharray="4 4" />
@@ -570,20 +545,10 @@ export function OperatorEntryPage() {
               <circle cx="14" cy="18" r="1" fill="var(--text-muted)" />
             </svg>
           </div>
-          <h2 style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)',
-            color: 'var(--text-primary)',
-            marginBottom: 'var(--space-2)',
-          }}>Connection unavailable</h2>
-          <p style={{
-            fontFamily: 'var(--font-ui)',
-            fontSize: '0.9375rem',
-            color: 'var(--text-muted)',
-            maxWidth: 400,
-            margin: '0 auto',
-            lineHeight: 1.6,
-          }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)', color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+            Connection unavailable
+          </h2>
+          <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto', lineHeight: 1.6 }}>
             Wallet connection is unavailable. Please install a Midnight wallet.
           </p>
         </motion.div>
