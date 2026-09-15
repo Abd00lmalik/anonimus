@@ -34,3 +34,30 @@ midnight-level-db/
 
 # Reports (local only)
 PREPROD-AUDIT-REPORT.md
+AUDIT-REPORT.md
+MIDNIGHT-PREPROD-AUDIT.md
+PREPROD-DEPLOYMENT.md
+PREPROD-READINESS-REPORT.md
+
+# Debug / one-off scripts
+scripts/check-dust-state.js
+scripts/check-registration.cjs
+scripts/deploy-vps.sh
+scripts/derive-address.ts
+scripts/dust-sync-check.cjs
+scripts/dust-sync-check.ts
+scripts/dust-ws-query*.cjs
+scripts/monitor.sh
+scripts/query-dust-indexer.ts
+scripts/query-dust-ws.sh
+scripts/query-indexer*.sh
+
+# Binaries
+plink.exe
+
+# Research / operational docs (not product code)
+agent.md
+handoff.md
+docs/
+facetec-*.md
+feedback.md

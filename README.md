@@ -149,25 +149,92 @@ flowchart LR
 
 **File:** `contracts/poh_core.compact`
 
-The Compact contract implements four on-chain operations:
+### Compilation
 
-| Operation | Caller | Description |
-|-----------|--------|-------------|
-| `constructor()` | Deployer | Sets admin key from deployer's secret |
-| `registerVerifier(vk)` | Admin | Adds a trusted verifier's Jubjub public key |
-| `enrollCredential(commitment)` | Admin | Inserts a credential commitment into the Merkle registry |
-| `verifyPersonhood(campaignId)` | User | ZK proof: attestation + Merkle membership + fresh nullifier |
+| Property | Value |
+|----------|-------|
+| Compiler | `compactc` v0.31.1 |
+| Language | Compact v0.23.0 |
+| Runtime | `compact-runtime` v0.16.0 |
+| Pragma | `language_version >= 0.22` |
 
-**ZK proof verifies three conditions simultaneously:**
+### On-Chain Contract
+
+| Property | Value |
+|----------|-------|
+| Contract Address | `85b153c710b98cf0b23a6e470c20422bcb685aa4439795bb2becaaa6da49a37f` |
+| Network | Midnight PREPROD |
+| Deployed By | Backend admin wallet |
+
+### Compiled Circuits
+
+**8 circuits** compiled from `poh_core.compact`:
+
+| Circuit | Type | Proof | Arguments | Returns | Description |
+|---------|------|-------|-----------|---------|-------------|
+| `deriveCredId` | pure | No | `credSecret: Bytes<32>` | `Bytes<32>` | Derive credential ID from secret |
+| `deriveCredIdField` | pure | No | `credSecret: Bytes<32>` | `Field` | Derive credential ID as field element |
+| `deriveCommitment` | pure | No | `credSecret: Bytes<32>`, `salt: Bytes<32>` | `Bytes<32>` | Create Pedersen commitment from secret + salt |
+| `registerVerifier` | admin | Yes | `vk: JubjubPoint` | `()` | Register a trusted verifier's public key |
+| `removeVerifier` | admin | Yes | `vk: JubjubPoint` | `()` | Remove a verifier from the trusted set |
+| `enrollCredential` | admin | Yes | `commitment: Bytes<32>` | `()` | Insert credential commitment into Merkle registry |
+| `verifyPersonhood` | user | Yes | `campaignId: Bytes<32>` | `()` | ZK proof: attestation + Merkle + nullifier |
+| `isVerifierTrusted` | admin | Yes | `vk: JubjubPoint` | `Boolean` | Check if a verifier key is registered |
+
+**4 admin circuits** (require admin key witness):
+- `registerVerifier` — adds a Schnorr verification key to the trusted set
+- `removeVerifier` — removes a verification key
+- `enrollCredential` — inserts a Pedersen commitment into the Merkle registry
+- `isVerifierTrusted` — queries whether a key is in the trusted set
+
+**3 pure circuits** (callable off-chain via `pureCircuits`):
+- `deriveCredId` — deterministic credential ID derivation
+- `deriveCredIdField` — same as above, as field element
+- `deriveCommitment` — Pedersen commitment from secret + salt
+
+**1 user circuit** (ZK proof, verified on-chain):
+- `verifyPersonhood` — proves attestation validity + Merkle membership + fresh nullifier in a single ZK proof
+
+### Compiled Witnesses
+
+**8 witnesses** (private inputs resolved by the runtime):
+
+| Witness | Arguments | Returns | Used By |
+|---------|-----------|---------|---------|
+| `local_secret_key` | — | `Bytes<32>` | `constructor`, `registerVerifier`, `enrollCredential`, `isVerifierTrusted`, `removeVerifier` |
+| `get_credential_secret` | — | `Bytes<32>` | `verifyPersonhood` |
+| `get_credential_salt` | — | `Bytes<32>` | `verifyPersonhood` |
+| `get_registry_path` | `commitment: Bytes<32>` | `MerkleTreePath` | `verifyPersonhood` |
+| `get_attestation` | — | `SchnorrSignature` | `verifyPersonhood` |
+| `get_expiration` | — | `Field` | `verifyPersonhood` |
+| `getAttestedVerifierPk` | — | `JubjubPoint` | `verifyPersonhood` |
+| `getSchnorrReduction` | `challengeHash: Field` | `(Field, Uint<253>)` | `verifyPersonhood` |
+
+### On-Chain Ledger State
+
+**4 ledger fields:**
+
+| Field | Index | Storage | Type | Description |
+|-------|-------|---------|------|-------------|
+| `adminKey` | 0 | Cell | `Bytes<32>` | Admin public key (derived from deployer's secret) |
+| `verifiers` | 1 | Set | `Set<JubjubPoint>` | Trusted verifier public keys |
+| `registry` | 2 | HistoricMerkleTree | `HistoricMerkleTree<16, Bytes<32>>` | Credential commitment Merkle tree (depth 16 = 65,536 leaves) |
+| `spentNullifiers` | 3 | Set | `Set<Bytes<32>>` | Campaign-scoped nullifiers (prevents double-registration) |
+
+### ZK Proof Verifies Three Conditions Simultaneously
+
 1. A trusted verifier signed an attestation over the user's credential ID
 2. The credential commitment exists in the on-chain registry (Merkle proof)
 3. This credential has not been used in this campaign before (nullifier check)
 
-**Patterns used:**
+### Patterns Used
+
 - Domain-separated `persistentHash` with `pad(32, "anonimus:<domain>:")` prefixes
 - `HistoricMerkleTree<16>` for credential registry (65,536 leaves)
 - Campaign-scoped nullifiers for per-campaign uniqueness
 - Witness-derived admin key (same pattern as zk-loan)
+- `persistentCommit` with random salt — defeats leaf-guessing
+- `disclose()` required on witness-derived values entering ledger ops/exports
 
 ---
 
@@ -281,14 +348,15 @@ Three Docker services (`devnet.yml`):
 
 ## Deployment
 
-### PREPROD (Current Target)
+### PREPROD (Live)
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| Backend | ✅ Deployed | VPS `43.157.12.242:3001` via PM2 |
-| Wallet | ⏳ Syncing | FluentWalletBuilder on preprod (~2-3h initial sync) |
-| Contract | ⏳ Pending | Requires funded deployer wallet + proof server |
-| Frontend | ⏳ Pending | Vercel deployment |
+| Backend | ✅ Live | VPS `43.157.12.242:3001` via PM2 |
+| Frontend | ✅ Live | [anonimus-proof.vercel.app](https://anonimus-proof.vercel.app) |
+| Contract | ✅ Deployed | `85b153c710b98cf0b23a6e470c20422bcb685aa4439795bb2becaaa6da49a37f` |
+| Verifier | ✅ Registered | Public key on-chain |
+| Wallet | ✅ Synced | FluentWalletBuilder on preprod |
 
 ### Deployer Wallet
 
