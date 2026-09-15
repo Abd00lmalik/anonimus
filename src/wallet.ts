@@ -1,6 +1,7 @@
 import {
   type CoinPublicKey,
   DustSecretKey,
+  LedgerParameters,
   type EncPublicKey,
   type FinalizedTransaction,
   ZswapSecretKeys,
@@ -12,19 +13,27 @@ import type {
 } from '@midnight-ntwrk/midnight-js-types';
 import { ttlOneHour } from '@midnight-ntwrk/midnight-js-utils';
 import type { WalletFacade, FacadeState, UnshieldedKeystore } from '@midnight-ntwrk/wallet-sdk';
-import type { EnvironmentConfiguration } from '@midnight-ntwrk/testkit-js';
+import {
+  type DustWalletOptions,
+  type EnvironmentConfiguration,
+  FluentWalletBuilder,
+} from '@midnight-ntwrk/testkit-js';
 import * as Rx from 'rxjs';
 import type { Logger } from 'pino';
-import { assembleWallet, type FastSyncOptions } from './fast-sync/fast-wallet.js';
 
 export type WalletSecret =
   | { kind: 'seed'; value: string }
   | { kind: 'mnemonic'; value: string };
 
+const DUST_OPTIONS: DustWalletOptions = {
+  ledgerParams: LedgerParameters.initialParameters(),
+  additionalFeeOverhead: 1_000n,
+  feeBlocksMargin: 5,
+};
+
 export class MidnightWalletProvider implements MidnightProvider, WalletProvider {
   readonly wallet: WalletFacade;
   readonly unshieldedKeystore: UnshieldedKeystore;
-  readonly subWallets: { shielded: any; dust: any; unshielded: any };
 
   private constructor(
     private readonly logger: Logger,
@@ -32,12 +41,9 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     private readonly zswapSecretKeys: ZswapSecretKeys,
     private readonly dustSecretKey: DustSecretKey,
     unshieldedKeystore: UnshieldedKeystore,
-    private readonly walletSeeds: { shielded: Uint8Array; dust: Uint8Array },
-    subWallets: { shielded: any; dust: any; unshielded: any },
   ) {
     this.wallet = wallet;
     this.unshieldedKeystore = unshieldedKeystore;
-    this.subWallets = subWallets;
   }
 
   getCoinPublicKey(): CoinPublicKey {
@@ -80,24 +86,30 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     logger: Logger,
     env: EnvironmentConfiguration,
     secret: WalletSecret,
-    opts?: { fastSync?: FastSyncOptions },
   ): Promise<MidnightWalletProvider> {
-    const { facade, zswapSecretKeys, dustSecretKey, keystore, seeded, referenceHeight, walletSeeds, subWallets } =
-      await assembleWallet(logger, env, secret, opts?.fastSync);
+    const base = FluentWalletBuilder.forEnvironment(env).withDustOptions(DUST_OPTIONS);
+    const builder = secret.kind === 'mnemonic'
+      ? base.withMnemonic(secret.value)
+      : base.withSeed(secret.value);
 
-    const syncInfo = seeded.length > 0
-      ? ` (fast-sync: seeded [${seeded.join(', ')}] from height ${referenceHeight})`
-      : '';
-    logger.info(`Wallet built from ${secret.kind}${syncInfo}`);
+    const buildResult = await builder.buildWithoutStarting();
+    const { wallet, seeds, keystore } = buildResult as {
+      wallet: WalletFacade;
+      seeds: { masterSeed: string; shielded: Uint8Array; dust: Uint8Array };
+      keystore: UnshieldedKeystore;
+    };
+
+    const shieldedSecretKeys = ZswapSecretKeys.fromSeed(seeds.shielded);
+    const dustSecretKey = DustSecretKey.fromSeed(seeds.dust);
+
+    logger.info(`Wallet built from ${secret.kind}; master seed: ${seeds.masterSeed.slice(0, 8)}...`);
 
     return new MidnightWalletProvider(
       logger,
-      facade,
-      zswapSecretKeys,
+      wallet,
+      shieldedSecretKeys,
       dustSecretKey,
       keystore,
-      walletSeeds,
-      subWallets,
     );
   }
 }
@@ -110,8 +122,6 @@ function isProgressStrictlyComplete(progress: unknown): boolean {
   if (typeof candidate.isStrictlyComplete === 'function') {
     return (candidate.isStrictlyComplete as () => boolean)();
   }
-  // Fallback: if isStrictlyComplete doesn't exist (e.g. unshielded GraphQL
-  // schema mismatch), treat as complete when applied >= target (both 0 = done).
   const p = progress as {
     appliedIndex?: bigint; highestRelevantWalletIndex?: bigint;
     appliedId?: bigint; highestTransactionId?: bigint;
@@ -159,7 +169,6 @@ export async function syncWallet(
               `dust=${formatProgress((state as any).dust?.state?.progress)}`,
           );
         }
-        // Track progress for stall detection
         const dustP = (state as any).dust?.state?.progress;
         const dustApplied = dustP?.appliedIndex ?? dustP?.appliedId ?? 0n;
         if (dustApplied !== lastDustApplied) {
@@ -177,12 +186,11 @@ export async function syncWallet(
           isProgressStrictlyComplete(un);
         if (allComplete) return true;
 
-        // Stall detection: if shielded+dust are done but sync stalls for 5 min, proceed
         const shDone = isProgressStrictlyComplete(sh);
         const dustDone = isProgressStrictlyComplete(dust);
         if (shDone && dustDone) {
           const stallMs = Date.now() - lastProgressTime;
-          const STALL_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+          const STALL_THRESHOLD_MS = 5 * 60 * 1000;
           if (stallMs > STALL_THRESHOLD_MS) {
             logger.warn(`Sync stall detected (${Math.round(stallMs / 1000)}s no dust progress). Proceeding with current state.`);
             return true;

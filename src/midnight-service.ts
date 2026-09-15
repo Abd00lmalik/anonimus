@@ -16,7 +16,6 @@ import { createHash } from 'node:crypto';
 import { getConfig, type NetworkConfig } from './config.js';
 import { MidnightWalletProvider, syncWallet, type WalletSecret } from './wallet.js';
 import { buildProviders, type PohProviders } from './providers.js';
-import { saveWalletState, getChainTipHeight } from './fast-sync/fast-wallet.js';
 import {
   CompiledPohCoreContract,
   Contract,
@@ -119,7 +118,6 @@ export class MidnightService {
     this.logger.info(`[MidnightService] Network: ${config.networkId}`);
 
     const secret: WalletSecret = { kind: 'mnemonic', value: getDeployerSeed() };
-    const fastSyncRoot = process.env['FAST_SYNC_REFERENCE_ROOT'];
     this.wallet = await MidnightWalletProvider.build(
       this.logger as any,
       {
@@ -133,26 +131,10 @@ export class MidnightService {
         proofServer: config.proofServer,
       },
       secret,
-      fastSyncRoot ? { fastSync: { referenceRoot: fastSyncRoot } } : undefined,
     );
     await this.wallet.start();
     await syncWallet(this.logger as any, this.wallet.wallet);
     this.logger.info('[MidnightService] Wallet synced.');
-
-    // Auto-save wallet state for future fast-sync restarts
-    try {
-      const tipHeight = await getChainTipHeight(config.indexer) ?? 0;
-      await saveWalletState(
-        this.wallet.subWallets.shielded,
-        this.wallet.subWallets.dust,
-        this.wallet.subWallets.unshielded,
-        tipHeight,
-        this.logger as any,
-      );
-      this.logger.info(`[MidnightService] Wallet state saved at height ${tipHeight} for fast-sync.`);
-    } catch (err: any) {
-      this.logger.warn(`[MidnightService] Failed to save wallet state: ${err.message} — will re-sync from genesis next restart.`);
-    }
 
     // Build providers (proof server, indexer, private state, etc.)
     this.providers = buildProviders(
@@ -492,9 +474,25 @@ export class MidnightService {
     const startTime = Date.now();
     let lastHeight: number | undefined;
 
+    const queryHeight = async (): Promise<number | undefined> => {
+      try {
+        const res = await fetch(config.indexer, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: 'query { block { height } }' }),
+        });
+        if (!res.ok) return undefined;
+        const json: any = await res.json();
+        const h = json?.data?.block?.height;
+        return typeof h === 'number' && h > 0 ? h : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+
     while (Date.now() - startTime < timeoutMs) {
       try {
-        const height = await getChainTipHeight(config.indexer);
+        const height = await queryHeight();
         if (height !== undefined && height !== null) {
           if (lastHeight === undefined) {
             lastHeight = height;
