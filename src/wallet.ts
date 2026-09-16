@@ -20,6 +20,8 @@ import {
 } from '@midnight-ntwrk/testkit-js';
 import * as Rx from 'rxjs';
 import type { Logger } from 'pino';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export type WalletSecret =
   | { kind: 'seed'; value: string }
@@ -30,6 +32,65 @@ const DUST_OPTIONS: DustWalletOptions = {
   additionalFeeOverhead: 1_000n,
   feeBlocksMargin: 5,
 };
+
+// ── Wallet State Persistence ──
+
+const STATE_DIR = process.env['WALLET_STATE_DIR'] || path.resolve(process.cwd(), 'wallet-state');
+
+function getStateFilePath(kind: string): string {
+  return path.join(STATE_DIR, `${kind}.state`);
+}
+
+export async function saveWalletState(logger: Logger, wallet: WalletFacade): Promise<void> {
+  try {
+    if (!fs.existsSync(STATE_DIR)) {
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+    }
+    const [shieldedState, unshieldedState, dustState] = await Promise.all([
+      wallet.shielded.serializeState(),
+      wallet.unshielded.serializeState(),
+      wallet.dust.serializeState(),
+    ]);
+    fs.writeFileSync(getStateFilePath('shielded'), shieldedState, 'utf-8');
+    fs.writeFileSync(getStateFilePath('unshielded'), unshieldedState, 'utf-8');
+    fs.writeFileSync(getStateFilePath('dust'), dustState, 'utf-8');
+    logger.info('[WalletState] Saved wallet state to disk.');
+  } catch (err: unknown) {
+    logger.warn(`[WalletState] Failed to save wallet state: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function loadSavedState(logger: Logger): { shielded: string; unshielded: string; dust: string } | undefined {
+  try {
+    const files = ['shielded', 'unshielded', 'dust'];
+    const missing = files.filter(f => !fs.existsSync(getStateFilePath(f)));
+    if (missing.length > 0) {
+      logger.info(`[WalletState] No saved state (missing: ${missing.join(', ')}).`);
+      return undefined;
+    }
+    const state = {
+      shielded: fs.readFileSync(getStateFilePath('shielded'), 'utf-8'),
+      unshielded: fs.readFileSync(getStateFilePath('unshielded'), 'utf-8'),
+      dust: fs.readFileSync(getStateFilePath('dust'), 'utf-8'),
+    };
+    logger.info('[WalletState] Found saved wallet state.');
+    return state;
+  } catch {
+    return undefined;
+  }
+}
+
+function clearSavedState(logger: Logger): void {
+  try {
+    for (const f of ['shielded', 'unshielded', 'dust']) {
+      const fp = getStateFilePath(f);
+      if (fs.existsSync(fp)) fs.rmSync(fp);
+    }
+    logger.info('[WalletState] Cleared saved state.');
+  } catch {
+    // ignore
+  }
+}
 
 export class MidnightWalletProvider implements MidnightProvider, WalletProvider {
   readonly wallet: WalletFacade;
@@ -87,6 +148,65 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     env: EnvironmentConfiguration,
     secret: WalletSecret,
   ): Promise<MidnightWalletProvider> {
+    const savedState = loadSavedState(logger);
+
+    if (savedState) {
+      logger.info('[Wallet] Attempting restore from saved state...');
+
+      const { ShieldedWallet } = await import('@midnight-ntwrk/wallet-sdk-shielded');
+      const { UnshieldedWallet, createKeystore, PublicKey } = await import('@midnight-ntwrk/wallet-sdk-unshielded-wallet');
+      const { DustWallet } = await import('@midnight-ntwrk/wallet-sdk-dust-wallet');
+      const { WalletFacade, InMemoryTransactionHistoryStorage, WalletEntrySchema, mergeWalletEntries } = await import('@midnight-ntwrk/wallet-sdk-facade');
+
+      const seed = secret.kind === 'mnemonic'
+        ? (await import('@midnight-ntwrk/testkit-js')).getShieldedSeed(secret.value)
+        : Uint8Array.from(Buffer.from(secret.value, 'hex'));
+      const dustSeed = secret.kind === 'mnemonic'
+        ? (await import('@midnight-ntwrk/testkit-js')).getDustSeed(secret.value)
+        : Uint8Array.from(Buffer.from(secret.value, 'hex'));
+      const unshieldedSeed = secret.kind === 'mnemonic'
+        ? (await import('@midnight-ntwrk/testkit-js')).getUnshieldedSeed(secret.value)
+        : Uint8Array.from(Buffer.from(secret.value, 'hex'));
+
+      const shieldedSecretKeys = ZswapSecretKeys.fromSeed(seed);
+      const dustSecretKey = DustSecretKey.fromSeed(dustSeed);
+      const unshieldedKeystore = createKeystore(unshieldedSeed, env.networkId);
+
+      const shieldedConfig = {
+        indexerClientConnection: { indexerHttpUrl: env.indexer },
+        networkId: env.networkId,
+        txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
+      };
+      const unshieldedConfig = {
+        indexerClientConnection: { indexerWsUrl: env.indexerWS, indexerHttpUrl: env.indexer },
+        networkId: env.networkId,
+        txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
+      };
+      const dustConfig = {
+        indexerClientConnection: { indexerHttpUrl: env.indexer },
+        networkId: env.networkId,
+        txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
+      };
+
+      const wallet = await WalletFacade.init({
+        configuration: {
+          networkId: env.networkId,
+          nodeClientConnection: { nodeRpcUrl: env.node },
+          indexerClientConnection: { indexerHttpUrl: env.indexer },
+          txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
+        } as any,
+        shielded: (config: any) => ShieldedWallet({ ...shieldedConfig, ...config }).restore(savedState.shielded),
+        unshielded: (config: any) => UnshieldedWallet({ ...unshieldedConfig, ...config }).restore(savedState.unshielded),
+        dust: (config: any) => DustWallet({ ...dustConfig, ...config }).restore(savedState.dust),
+      });
+
+      logger.info('[Wallet] Restored from saved state. Starting...');
+      await wallet.start(shieldedSecretKeys, dustSecretKey);
+
+      return new MidnightWalletProvider(logger, wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore);
+    }
+
+    logger.info('[Wallet] No saved state. Building fresh...');
     const base = FluentWalletBuilder.forEnvironment(env).withDustOptions(DUST_OPTIONS);
     const builder = secret.kind === 'mnemonic'
       ? base.withMnemonic(secret.value)
@@ -157,7 +277,7 @@ export async function syncWallet(
   let lastProgressTime = Date.now();
   let lastDustApplied = 0n;
 
-  return Rx.firstValueFrom(
+  const result = await Rx.firstValueFrom(
     wallet.state().pipe(
       Rx.tap((state: FacadeState) => {
         emissionCount++;
@@ -213,4 +333,7 @@ export async function syncWallet(
       Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions (shielded + unshielded done; dust may continue in background)`)),
     ),
   );
+
+  await saveWalletState(logger, wallet);
+  return result;
 }
