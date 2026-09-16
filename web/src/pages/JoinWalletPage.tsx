@@ -3,19 +3,48 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { fetchCampaign, fetchNetworkInfo } from '../lib/api'
 import { useVerification } from '../contexts/VerificationContext'
+import { useWallet } from '../contexts/WalletContext'
 import type { Campaign } from '../types'
 
-function getWalletIcon(id: string): React.ReactNode {
-  if (typeof window !== 'undefined' && window.midnight) {
-    const wallet = id === 'lace'
-      ? (window.midnight.mnLace ?? window.midnight.lace)
-      : (window.midnight['1am'])
-    const iconUrl = (wallet as any)?.icon
-    if (iconUrl) {
-      return <img src={iconUrl} alt={id} width={32} height={32} style={{ borderRadius: 8, objectFit: 'cover' }} />
+interface DetectedIcon {
+  lace: string | null
+  '1am': string | null
+}
+
+function useWalletIcons(): DetectedIcon {
+  const [icons, setIcons] = useState<DetectedIcon>({ lace: null, '1am': null })
+
+  useEffect(() => {
+    const detect = () => {
+      const midnight = (window as any).midnight
+      if (!midnight || typeof midnight !== 'object') return
+
+      const laceApi = midnight.mnLace ?? midnight.lace
+      const oneAmApi = midnight['1am']
+
+      setIcons({
+        lace: laceApi?.icon || null,
+        '1am': oneAmApi?.icon || null,
+      })
     }
+
+    detect()
+    const interval = setInterval(detect, 1000)
+    const timeout = setTimeout(() => clearInterval(interval), 5000)
+    return () => { clearInterval(interval); clearTimeout(timeout) }
+  }, [])
+
+  return icons
+}
+
+function WalletIcon({ walletId, detectedIcons }: { walletId: string; detectedIcons: DetectedIcon }) {
+  const iconUrl = detectedIcons[walletId as keyof DetectedIcon]
+
+  if (iconUrl) {
+    return <img src={iconUrl} alt={walletId} width={32} height={32} style={{ borderRadius: 8, objectFit: 'cover' }} />
   }
-  if (id === 'lace') {
+
+  if (walletId === 'lace') {
     return (
       <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
         <rect width="32" height="32" rx="8" fill="#2A2438" />
@@ -42,10 +71,19 @@ export function JoinWalletPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { startWalletConnect, stage } = useVerification()
+  const { wallet, disconnect } = useWallet()
+  const detectedIcons = useWalletIcons()
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [faucetUrl, setFaucetUrl] = useState<string | null>(null)
+
+  // Force disconnect on mount — prevents wallet extension auto-connect
+  useEffect(() => {
+    if (wallet.connected) {
+      disconnect()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!id) return
@@ -164,7 +202,7 @@ export function JoinWalletPage() {
                 transition: 'all var(--duration-fast) var(--ease-out)',
               }}
             >
-              {getWalletIcon(wallet.id)}
+              <WalletIcon walletId={wallet.id} detectedIcons={detectedIcons} />
               <div>
                 <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text-primary)' }}>
                   {wallet.name}
