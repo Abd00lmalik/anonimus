@@ -40,6 +40,10 @@ import path from 'node:path';
 interface StoreData {
   campaigns: CampaignRecord[];
   registrations: RegistrationRecord[];
+  serverKeys?: {
+    adminKeyHex: string;
+    verifierSkHex: string;
+  };
 }
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -418,4 +422,22 @@ export async function isRegistered(campaignId: string, nullifier: string): Promi
   return loadStore().registrations.some(
     r => r.campaignId === campaignId && r.nullifier === nullifier,
   );
+}
+
+// ── Server Key Persistence ──
+
+export interface ServerKeys {
+  adminKeyHex: string;
+  verifierSkHex: string;
+}
+
+export async function getServerKeys(): Promise<ServerKeys | undefined> {
+  const store = loadStore();
+  return store.serverKeys;
+}
+
+export async function saveServerKeys(keys: ServerKeys): Promise<void> {
+  const store = loadStore();
+  store.serverKeys = keys;
+  saveStore(store);
 }

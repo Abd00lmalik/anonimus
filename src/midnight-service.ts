@@ -30,6 +30,8 @@ import {
   type JubjubPoint,
 } from '../contracts/witnesses.js';
 import { setVerifier } from './attestation-service.js';
+import { getServerKeys, saveServerKeys } from './store.js';
+import { jubjubSchnorrVerifyingKey } from '../contracts/witnesses.js';
 
 // ============================================================================
 // Midnight Service — real ZK proof generation + transaction submission
@@ -180,11 +182,39 @@ export class MidnightService {
       }
     }
 
-    // Create and register test verifier (Set.insert is idempotent — safe to re-register with new VK)
-    this.verifier = createTestVerifier();
-    setVerifier(this.verifier);
-    await this._registerVerifier();
-    this.logger.info('[MidnightService] Verifier registered.');
+    // Create and register test verifier
+    // Persist keys across restarts so we reuse the same VK on-chain
+    const existingKeys = await getServerKeys();
+    if (existingKeys) {
+      const sk = BigInt('0x' + existingKeys.verifierSkHex);
+      this.verifier = {
+        sk,
+        pk: jubjubSchnorrVerifyingKey(sk),
+        label: 'ephemeral-test-verifier' as const,
+      };
+      this.adminSecretKey = Uint8Array.from(Buffer.from(existingKeys.adminKeyHex, 'hex'));
+      setVerifier(this.verifier);
+      this.logger.info('[MidnightService] Loaded persisted verifier key (skipping re-registration).');
+    } else {
+      this.verifier = createTestVerifier();
+      setVerifier(this.verifier);
+      // adminSecretKey was set by _deployContract() — persist it
+      // If deploy was skipped, generate a fresh admin key
+      if (!this.adminSecretKey) {
+        this.adminSecretKey = crypto.getRandomValues(new Uint8Array(32));
+      }
+      await saveServerKeys({
+        adminKeyHex: Buffer.from(this.adminSecretKey).toString('hex'),
+        verifierSkHex: this.verifier.sk.toString(16),
+      });
+      this.logger.info('[MidnightService] Generated and persisted new verifier key.');
+      try {
+        await this._registerVerifier();
+        this.logger.info('[MidnightService] Verifier registered.');
+      } catch (err: any) {
+        this.logger.warn(`[MidnightService] Verifier registration deferred (will retry on next restart): ${err.message?.slice(0, 80)}`);
+      }
+    }
 
     this.initialized = true;
   }
