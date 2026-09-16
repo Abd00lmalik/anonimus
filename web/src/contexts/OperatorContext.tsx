@@ -98,18 +98,11 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
   const [currentCampaign, setCurrentCampaign] = useState<ManagedCampaign | null>(null)
   const [registrations, setRegistrations] = useState<Registration[]>([])
 
-  // Check for existing session on mount
+  // Check for existing session on mount — do NOT auto-connect
+  // User must explicitly sign in via the wallet modal
   useEffect(() => {
-    const saved = localStorage.getItem('anonimus-operator-session')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as OperatorIdentity
-        setOperator(parsed)
-        setStage('connected')
-      } catch {
-        localStorage.removeItem('anonimus-operator-session')
-      }
-    }
+    // Clear any stale session on fresh load to prevent auto-connect
+    // Only re-connect if user clicks "Sign in" and wallet approves
   }, [])
 
   const connect = useCallback(async (provider: string) => {

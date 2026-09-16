@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useOperator } from '../../contexts/OperatorContext'
+import { useTheme } from '../../contexts/ThemeContext'
 import { Logo } from '../ui/Logo'
 
 const NETWORK_ID = 'preprod'
@@ -221,7 +222,8 @@ function deriveProjectName(address: string): string {
 
 export function OperatorNav() {
   const navigate = useNavigate()
-  const { operator, stage, setIdentity } = useOperator()
+  const { operator, stage, setIdentity, disconnect } = useOperator()
+  const { theme } = useTheme()
   const [modalOpen, setModalOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [connectingKey, setConnectingKey] = useState<string | null>(null)
@@ -264,7 +266,8 @@ export function OperatorNav() {
       transition={{ duration: 0.5, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-        backdropFilter: 'blur(16px)', background: 'rgba(7, 8, 10, 0.5)',
+        backdropFilter: 'blur(16px)',
+        background: theme === 'dark' ? 'rgba(7, 8, 10, 0.5)' : 'rgba(244, 240, 232, 0.8)',
         borderBottom: '1px solid var(--border)',
       }}
     >
@@ -310,6 +313,15 @@ export function OperatorNav() {
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8125rem', color: 'var(--text-secondary)', letterSpacing: '0.02em' }}>
                 {operator.walletAddress.slice(0, 6)}...{operator.walletAddress.slice(-4)}
               </span>
+              <button onClick={() => { disconnect(); navigate('/') }} style={{
+                fontFamily: 'var(--font-ui)', fontSize: '0.75rem', fontWeight: 500, height: 32, padding: '0 12px',
+                borderRadius: 'var(--radius-sm)', background: 'transparent',
+                border: '1px solid var(--border)', color: 'var(--text-muted)',
+                transition: 'all var(--duration-fast) var(--ease-out)', cursor: 'pointer',
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-hover)'; e.currentTarget.style.color = 'var(--text-primary)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)' }}
+              >Disconnect</button>
             </>
           ) : (
             <button onClick={() => { setModalOpen(true); setModalError(null) }} style={{

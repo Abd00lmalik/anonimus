@@ -20,7 +20,7 @@ export function DeveloperNav() {
         right: 0,
         zIndex: 100,
         backdropFilter: 'blur(16px)',
-        background: 'rgba(7, 8, 10, 0.5)',
+        background: theme === 'dark' ? 'rgba(7, 8, 10, 0.5)' : 'rgba(244, 240, 232, 0.8)',
         borderBottom: '1px solid var(--border)',
       }}
     >
