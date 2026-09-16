@@ -181,13 +181,20 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
         seed = Uint8Array.from(Buffer.from(savedState.seeds.shielded, 'hex'));
         dustSeed = Uint8Array.from(Buffer.from(savedState.seeds.dust, 'hex'));
         unshieldedSeed = Uint8Array.from(Buffer.from(savedState.seeds.unshielded, 'hex'));
-        logger.info('[Wallet] Using saved seeds for restore.');
-      } else {
+        logger.info(`[Wallet] Using saved seeds for restore. shielded=${seed.length} bytes, dust=${dustSeed.length} bytes, unshielded=${unshieldedSeed.length} bytes`);
+        if (seed.length !== 32 || dustSeed.length !== 32 || unshieldedSeed.length !== 32) {
+          logger.warn('[Wallet] WARNING: Seed length mismatch — expected 32 bytes each. Clearing saved state and building fresh.');
+          clearSavedState(logger);
+          // Fall through to fresh build below
+          seed = undefined as any;
+        }
+      }
+      if (!seed || seed.length !== 32) {
         const testkit = await import('@midnight-ntwrk/testkit-js');
         seed = testkit.getShieldedSeed(secret.value);
         dustSeed = testkit.getDustSeed(secret.value);
         unshieldedSeed = testkit.getUnshieldedSeed(secret.value);
-        logger.info('[Wallet] Derived seeds from mnemonic for restore.');
+        logger.info(`[Wallet] Derived seeds from mnemonic for restore. shielded=${seed.length} bytes`);
       }
 
       const shieldedSecretKeys = ZswapSecretKeys.fromSeed(seed);
@@ -226,8 +233,11 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
         dust: (config: any) => DustWallet({ ...dustConfig, ...config }).restore(savedState.dust),
       });
 
-      logger.info('[Wallet] Restored from saved state. Starting...');
-      await wallet.start(shieldedSecretKeys, dustSecretKey);
+      // NOTE: Do NOT call wallet.start() here — restored wallets already have state.
+      // wallet.start() re-derives keys from seeds which can crash the WASM layer.
+      // The secret keys (zswapSecretKeys, dustSecretKey) are still used for
+      // getCoinPublicKey(), getEncryptionPublicKey(), and balanceTx().
+      logger.info('[Wallet] Restored from saved state (skipping wallet.start — restored wallets are self-contained).');
 
       return new MidnightWalletProvider(logger, wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore);
     }
