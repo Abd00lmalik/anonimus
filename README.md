@@ -254,6 +254,7 @@ flowchart LR
 | `GET` | `/api/campaigns/:id` | Get campaign details |
 | `GET` | `/api/campaigns/:id/registrations` | List registrations for a campaign |
 | `POST` | `/api/register-unsigned` | Create unsigned registration tx for user's wallet |
+| `POST` | `/api/register-dust` | Register NIGHT UTXOs for DUST generation |
 
 ### Middleware
 
@@ -348,15 +349,16 @@ Three Docker services (`devnet.yml`):
 
 ## Deployment
 
-### PREPROD (Live)
+### PREPROD (Live — Prototype)
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| Backend | ✅ Live | VPS `43.157.12.242:3001` via PM2 |
+| Backend | ⚠️ Running | VPS `43.157.12.242:3001` via PM2. `midnightReady: true` after ~5 min sync. |
 | Frontend | ✅ Live | [anonimus-proof.vercel.app](https://anonimus-proof.vercel.app) |
 | Contract | ✅ Deployed | `85b153c710b98cf0b23a6e470c20422bcb685aa4439795bb2becaaa6da49a37f` |
-| Verifier | ✅ Registered | Public key on-chain |
-| Wallet | ✅ Synced | FluentWalletBuilder on preprod |
+| Verifier | ⚠️ Registered (mismatch) | VK on-chain, but admin key may not match deploy-time key. `registerVerifier` fails with "Only admin". |
+| Wallet | ⚠️ Partial | Shielded + unshielded sync. Dust sync broken (v8 key mismatch). |
+| DUST | ❌ Not available | NIGHT registered but dust wallet can't track balance. No on-chain transactions possible. |
 
 ### Deployer Wallet
 
@@ -452,10 +454,43 @@ anonimus/
 
 ## Known Limitations
 
-1. **Initial wallet sync** — First-time DUST sync from genesis takes ~2-3 hours on preprod. Future optimization via `moth-wallet` fast-sync or wallet-sdk 2.x.
-2. **Face verification** — Client-side `face-api.js` is a placeholder; production requires a real personhood provider.
-3. **Single campaign per registration** — Each `verifyPersonhood` call is scoped to one campaign ID.
-4. **Merkle tree depth** — `HistoricMerkleTree<16>` supports 65,536 credentials; revisit depth at scale.
+> **This is a prototype.** Anonimus demonstrates the core ZK proof-of-humanity flow on Midnight, but is not production-ready. The limitations below reflect the current state of both the project and the Midnight SDK ecosystem.
+
+### Prototype-Stage Issues
+
+1. **DUST wallet sync is broken.** The wallet SDK's dust wallet internally maintains both ledger-v8 and ledger-v9 states. When composing sub-wallets manually via `WalletFacade.init()` (restoring shielded/unshielded from saved state while building dust fresh from seed), the facade's `start()` passes a v9 `DustSecretKey` to the dust wallet's v8 `DustLocalState.replayEventsWithChanges`, which asserts `instanceof` on the v8 class. This prevents DUST balance tracking. Workaround: use `FluentWalletBuilder` for all three wallets (20+ min sync on restart) or accept no DUST visibility.
+
+2. **Zero DUST = no on-chain transactions.** Every contract interaction (deploy, register verifier, enroll credential) requires DUST for fees. The faucet gives tNIGHT, not DUST. Registering NIGHT for DUST generation requires a multi-step process (register → wait for chain confirmation → wait for accrual). Without DUST, the backend cannot enroll credentials or register verifiers — the system cannot operate.
+
+3. **Admin key mismatch across deploys.** The contract derives its admin identity as `H("anonimus:admin:pk:", deployerSecret)` at deploy time. If the deployer secret changes between sessions (e.g., regenerated on restart), the `registerVerifier` circuit assertion fails with "Only admin". The key is now persisted to prevent regeneration, but any contract deployed with a lost key is permanently admin-locked.
+
+4. **No test suite.** Zero test files exist. The contract has 8 circuits that need unit tests. The wallet lifecycle needs integration tests against local devnet. `yarn test` runs vitest but finds nothing.
+
+5. **Supabase not configured.** The backend falls back to a local JSON file (`data/store.json`) for campaign/registration metadata. Supabase integration requires `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` which have not been provisioned.
+
+### Midnight SDK Challenges
+
+6. **Dual-ledger dust wallet.** The dust wallet maintains both ledger-v8 and ledger-v9 states for protocol fork transitions. The SDK's `FluentWalletBuilder` handles this correctly when building all three wallets from seed, but breaks when you mix restored wallets (from `ShieldedWallet.restore()`) with a fresh dust wallet. There is no documented way to provide both v8 and v9 key material simultaneously unless you use `FacadeKeysByEpoch` — but `WalletFacade.start()` only passes v9 keys internally.
+
+7. **`WalletFacade.start()` API is undocumented.** The TypeScript signature says `start(material: FacadeStartMaterial)` where `FacadeStartMaterial = WalletSeeds | FacadeKeysByEpoch`, but the testkit's own `startWalletFacade()` passes `(ZswapSecretKeys, DustSecretKey)` as two positional args. The actual behavior depends on how `v9KeysOf()` interprets the input. Errors deep in WASM (`Cannot read properties of undefined (reading 'length')`) give no indication of which parameter is wrong.
+
+8. **WASM type mismatches across ledger versions.** `DustSecretKey` from `ledger-v8` and `ledger-v9` are both WASM wrappers but are different classes. `instanceof` checks fail across versions. Error messages from WASM are cryptic — a type mismatch produces `Cannot read properties of undefined (reading 'length')` with no useful stack trace.
+
+9. **Compact compiler is Unix-only.** The `compactc` binary requires WSL2 on Windows. The compile command syntax (`compact compile <source> <target-dir>`) differs from some documentation. CI/CD on Windows is impossible without WSL.
+
+10. **No fast-boot / checkpoint sync.** The shielded wallet must replay the entire chain (1.5M+ blocks on preprod) on every fresh start. Wallet state persistence (`saveWalletState` / `loadSavedState`) mitigates this for shielded/unshielded, but the dust wallet must rebuild from seed, adding ~5 minutes to each restart.
+
+### Design Limitations
+
+11. **Face verification is a placeholder.** Client-side `face-api.js` is used for demo purposes. Production requires a real personhood provider with anti-spoofing (liveness detection, hardware attestation).
+
+12. **Single campaign per registration.** Each `verifyPersonhood` call is scoped to one `campaignId: Bytes<32>`. A user must prove separately for each campaign they want to join.
+
+13. **Merkle tree capacity.** `HistoricMerkleTree<16>` supports 65,536 credentials. Sufficient for a pilot; revisit depth at scale.
+
+14. **Self-signed TLS.** Nginx uses a self-signed certificate. Production needs Let's Encrypt or a Cloudflare tunnel.
+
+15. **No role-based access control on the API.** The `/api/campaigns` POST endpoint has no authentication. Anyone can create campaigns. The `/api/register-dust` endpoint is unprotected.
 
 ---
 
