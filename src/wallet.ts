@@ -201,7 +201,9 @@ export async function syncWallet(
           }
 
           if (emissionCount > 500) {
-            logger.warn(`Dust sync slow (${Math.round((dust?.appliedIndex ?? 0n) as number)}/${dust?.length ?? '?'} after ${emissionCount} emissions). Proceeding — dust will continue in background.`);
+            const dustApplied = Number(dust?.appliedIndex ?? 0n);
+            const dustTotal = Number(dust?.length ?? 0n);
+            logger.warn(`Dust sync slow (${dustApplied}/${dustTotal} after ${emissionCount} emissions). Proceeding — dust will continue in background.`);
             return true;
           }
         }
