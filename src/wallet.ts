@@ -116,6 +116,8 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     private readonly zswapSecretKeys: ZswapSecretKeys,
     private readonly dustSecretKey: DustSecretKey,
     unshieldedKeystore: UnshieldedKeystore,
+    private readonly _seed: Uint8Array,
+    private readonly _dustSeed: Uint8Array,
   ) {
     this.wallet = wallet;
     this.unshieldedKeystore = unshieldedKeystore;
@@ -150,7 +152,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
 
   async start(): Promise<void> {
     this.logger.info('Starting wallet...');
-    await this.wallet.start(this.zswapSecretKeys, this.dustSecretKey);
+    await this.wallet.start({ shielded: this._seed, dust: this._dustSeed });
   }
 
   async stop(): Promise<void> {
@@ -239,7 +241,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       // getCoinPublicKey(), getEncryptionPublicKey(), and balanceTx().
       logger.info('[Wallet] Restored from saved state (skipping wallet.start — restored wallets are self-contained).');
 
-      return new MidnightWalletProvider(logger, wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore);
+      return new MidnightWalletProvider(logger, wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore, seed, dustSeed);
     }
 
     logger.info('[Wallet] No saved state. Building fresh...');
@@ -277,6 +279,8 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       shieldedSecretKeys,
       dustSecretKey,
       keystore,
+      seeds.shielded,
+      seeds.dust,
     );
     provider._savedSeeds = savedSeeds;
     return provider;
