@@ -341,6 +341,21 @@ app.get('/api/network', (_req, res) => {
   });
 });
 
+// ── DUST Registration ─────────────────────────────────────────────────
+app.post('/api/register-dust', async (_req, res) => {
+  if (!midnightService.isReady()) {
+    res.status(503).json({ error: 'Midnight service not ready' });
+    return;
+  }
+  try {
+    const result = await midnightService.registerForDust();
+    res.json(result);
+  } catch (err: any) {
+    console.error('[Anonimus] DUST registration failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {

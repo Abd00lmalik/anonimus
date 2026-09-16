@@ -227,6 +227,31 @@ export class MidnightService {
     return this.initialized;
   }
 
+  async registerForDust(): Promise<{ txId?: string; message: string }> {
+    if (!this.initialized || !this.wallet) {
+      return { message: 'Service not ready' };
+    }
+    const Rx = await import('rxjs');
+    const state = await Rx.firstValueFrom(this.wallet.wallet.state());
+    const unregistered = state.unshielded.availableCoins.filter(
+      (coin: any) => coin.meta?.registeredForDustGeneration !== true,
+    );
+    if (unregistered.length === 0) {
+      const dustBalance = state.dust.balance(new Date());
+      return { message: `All NIGHT already registered. DUST balance: ${dustBalance}` };
+    }
+    this.logger.info(`[MidnightService] Registering ${unregistered.length} NIGHT UTXO(s) for DUST generation...`);
+    const recipe = await this.wallet.wallet.registerNightUtxosForDustGeneration(
+      unregistered,
+      this.wallet.unshieldedKeystore.getPublicKey(),
+      (payload: Uint8Array) => this.wallet.unshieldedKeystore.signData(payload),
+    );
+    const finalized = await this.wallet.wallet.finalizeRecipe(recipe);
+    const txId = await this.wallet.wallet.submitTransaction(finalized);
+    this.logger.info(`[MidnightService] DUST registration submitted: ${txId}`);
+    return { txId, message: `Registered ${unregistered.length} UTXOs. DUST will accrue shortly.` };
+  }
+
   // ── Internal operations ───────────────────────────────────────────
 
   private async _deployContract(): Promise<void> {
