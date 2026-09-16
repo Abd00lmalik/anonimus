@@ -243,10 +243,15 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     const shieldedSecretKeys = ZswapSecretKeys.fromSeed(seeds.shielded);
     const dustSecretKey = DustSecretKey.fromSeed(seeds.dust);
 
-    let unshieldedSeedForSave: Uint8Array | undefined;
+    let savedSeeds: { shielded: Uint8Array; dust: Uint8Array; unshielded: Uint8Array } | undefined;
     if (secret.kind === 'mnemonic') {
-      const testkit = await import('@midnight-ntwrk/testkit-js');
-      unshieldedSeedForSave = testkit.getUnshieldedSeed(secret.value);
+      try {
+        const { WalletSeeds } = await import('@midnight-ntwrk/testkit-js');
+        const ws = WalletSeeds.fromMnemonic(secret.value);
+        savedSeeds = { shielded: ws.shielded, dust: ws.dust, unshielded: ws.unshielded };
+      } catch (e: any) {
+        logger.warn(`[Wallet] Could not derive seeds for persistence: ${e.message}`);
+      }
     }
 
     logger.info(`Wallet built from ${secret.kind}; master seed: ${seeds.masterSeed.slice(0, 8)}...`);
@@ -258,11 +263,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       dustSecretKey,
       keystore,
     );
-    provider._savedSeeds = {
-      shielded: seeds.shielded,
-      dust: seeds.dust,
-      unshielded: unshieldedSeedForSave ?? new Uint8Array(0),
-    };
+    provider._savedSeeds = savedSeeds;
     return provider;
   }
 }
