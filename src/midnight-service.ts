@@ -194,7 +194,7 @@ export class MidnightService {
       };
       this.adminSecretKey = Uint8Array.from(Buffer.from(existingKeys.adminKeyHex, 'hex'));
       setVerifier(this.verifier);
-      this.logger.info('[MidnightService] Loaded persisted verifier key (skipping re-registration).');
+      this.logger.info('[MidnightService] Loaded persisted verifier key.');
     } else {
       this.verifier = createTestVerifier();
       setVerifier(this.verifier);
@@ -206,17 +206,14 @@ export class MidnightService {
         verifierSkHex: this.verifier.sk.toString(16),
       });
       this.logger.info('[MidnightService] Generated and persisted new verifier key.');
+    }
 
-      if (existingAddress) {
-        this.logger.info('[MidnightService] Using existing contract — verifier registration deferred (needs DUST).');
-      } else {
-        try {
-          await this._registerVerifier();
-          this.logger.info('[MidnightService] Verifier registered.');
-        } catch (err: any) {
-          this.logger.warn(`[MidnightService] Verifier registration deferred (will retry on next restart): ${err.message?.slice(0, 80)}`);
-        }
-      }
+    // Always register verifier — Set.insert is idempotent (no-op if already registered)
+    try {
+      await this._registerVerifier();
+      this.logger.info('[MidnightService] Verifier registered on-chain.');
+    } catch (err: any) {
+      this.logger.warn(`[MidnightService] Verifier registration failed (will retry next restart): ${err.message?.slice(0, 120)}`);
     }
 
     this.initialized = true;
