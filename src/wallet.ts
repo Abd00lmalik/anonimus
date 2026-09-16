@@ -221,6 +221,16 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
         txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
       };
 
+      const dustConfigWithCost = {
+        ...dustConfig,
+        costParameters: {
+          ledgerParams: DUST_OPTIONS.ledgerParams,
+          additionalFeeOverhead: DUST_OPTIONS.additionalFeeOverhead,
+          feeBlocksMargin: DUST_OPTIONS.feeBlocksMargin,
+        },
+      };
+      const dustParameters = LedgerParameters.initialParameters().dust;
+
       const wallet = await WalletFacade.init({
         configuration: {
           networkId: env.networkId,
@@ -231,7 +241,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
         } as any,
         shielded: (config: any) => ShieldedWallet({ ...shieldedConfig, ...config }).restore(savedState.shielded),
         unshielded: (config: any) => UnshieldedWallet({ ...unshieldedConfig, ...config }).restore(savedState.unshielded),
-        dust: (config: any) => DustWallet({ ...dustConfig, ...config }).startWithSeed(dustSeed, DUST_OPTIONS.ledgerParams),
+        dust: (config: any) => DustWallet({ ...dustConfigWithCost, ...config }).startWithSeed(dustSeed, dustParameters),
       });
 
       // Build the provider with seeds for wallet.start() (called by midnight-service)
