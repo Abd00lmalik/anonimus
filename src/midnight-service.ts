@@ -198,8 +198,6 @@ export class MidnightService {
     } else {
       this.verifier = createTestVerifier();
       setVerifier(this.verifier);
-      // adminSecretKey was set by _deployContract() — persist it
-      // If deploy was skipped, generate a fresh admin key
       if (!this.adminSecretKey) {
         this.adminSecretKey = crypto.getRandomValues(new Uint8Array(32));
       }
@@ -208,11 +206,16 @@ export class MidnightService {
         verifierSkHex: this.verifier.sk.toString(16),
       });
       this.logger.info('[MidnightService] Generated and persisted new verifier key.');
-      try {
-        await this._registerVerifier();
-        this.logger.info('[MidnightService] Verifier registered.');
-      } catch (err: any) {
-        this.logger.warn(`[MidnightService] Verifier registration deferred (will retry on next restart): ${err.message?.slice(0, 80)}`);
+
+      if (existingAddress) {
+        this.logger.info('[MidnightService] Using existing contract — verifier registration deferred (needs DUST).');
+      } else {
+        try {
+          await this._registerVerifier();
+          this.logger.info('[MidnightService] Verifier registered.');
+        } catch (err: any) {
+          this.logger.warn(`[MidnightService] Verifier registration deferred (will retry on next restart): ${err.message?.slice(0, 80)}`);
+        }
       }
     }
 
