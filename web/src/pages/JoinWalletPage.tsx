@@ -44,22 +44,8 @@ function WalletIcon({ walletId, detectedIcons }: { walletId: string; detectedIco
     return <img src={iconUrl} alt={walletId} width={32} height={32} style={{ borderRadius: 8, objectFit: 'cover' }} />
   }
 
-  if (walletId === 'lace') {
-    return (
-      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-        <rect width="32" height="32" rx="8" fill="#2A2438" />
-        <circle cx="16" cy="16" r="11" stroke="#C6A35A" strokeWidth="1.5" />
-        <circle cx="16" cy="16" r="5" fill="#C6A35A" opacity="0.15" />
-        <circle cx="16" cy="16" r="2" fill="#C6A35A" />
-      </svg>
-    )
-  }
-  return (
-    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-      <rect width="32" height="32" rx="8" fill="#1A2332" />
-      <text x="16" y="20" textAnchor="middle" fill="#C6A35A" fontFamily="monospace" fontSize="13" fontWeight="700">1A</text>
-    </svg>
-  )
+  const fallbackSrc = walletId === 'lace' ? '/wallets/lace.svg' : '/wallets/1am.svg'
+  return <img src={fallbackSrc} alt={walletId} width={32} height={32} style={{ borderRadius: 8, objectFit: 'cover' }} />
 }
 
 const WALLETS = [

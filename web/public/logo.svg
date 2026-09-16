@@ -1,10 +1,10 @@
 <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Outer interrupted circle (privacy ring) -->
-  <circle cx="60" cy="60" r="52" stroke="#C6A35A" stroke-width="1.5" stroke-dasharray="280 30" opacity="0.7"/>
-  <!-- Inner shield shape -->
-  <path d="M60 28L36 40V58C36 74.5 46.2 90.1 60 94C73.8 90.1 84 74.5 84 58V40L60 28Z" stroke="#C6A35A" stroke-width="1.2" fill="none" opacity="0.5"/>
-  <!-- Zero-knowledge dot (the proof, not the identity) -->
-  <circle cx="60" cy="60" r="4" fill="#C6A35A" opacity="0.8"/>
-  <!-- Subtle inner ring -->
-  <circle cx="60" cy="60" r="18" stroke="#C6A35A" stroke-width="0.6" stroke-dasharray="4 4" opacity="0.3"/>
+  <!-- Outer ring — privacy ring, interrupted -->
+  <circle cx="60" cy="60" r="54" stroke="#C6A35A" stroke-width="1.5" stroke-dasharray="280 30" opacity="0.6"/>
+  <!-- Inner shield shape — protection -->
+  <path d="M60 24L34 38V56C34 75.2 45.4 93.2 60 97.6C74.6 93.2 86 75.2 86 56V38L60 24Z" stroke="#C6A35A" stroke-width="1.2" fill="none" opacity="0.35"/>
+  <!-- Midnight "M" mark -->
+  <path d="M42 72V48L52 62L60 48L68 62L78 48V72" stroke="#C6A35A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.9"/>
+  <!-- Zero-knowledge dot — the proof, not the identity -->
+  <circle cx="60" cy="82" r="3" fill="#C6A35A" opacity="0.7"/>
 </svg>

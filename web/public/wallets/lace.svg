@@ -1,5 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" fill="none">
-  <rect width="120" height="120" rx="24" fill="#1a1a2e"/>
-  <circle cx="60" cy="60" r="36" stroke="#C6A35A" stroke-width="3"/>
-  <path d="M44 60L60 44L76 60L60 76Z" stroke="#C6A35A" stroke-width="2" fill="none"/>
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="lace-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF92DE"/>
+      <stop offset="100%" stop-color="#FDC300"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#lace-grad)"/>
+  <text x="16" y="22" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="16" font-weight="700">L</text>
 </svg>
