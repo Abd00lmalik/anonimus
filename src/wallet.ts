@@ -116,8 +116,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     private readonly zswapSecretKeys: ZswapSecretKeys,
     private readonly dustSecretKey: DustSecretKey,
     unshieldedKeystore: UnshieldedKeystore,
-    private readonly _seed: Uint8Array,
-    private readonly _dustSeed: Uint8Array,
+    private readonly _seeds: { shielded: Uint8Array; dust: Uint8Array; unshielded: Uint8Array },
   ) {
     this.wallet = wallet;
     this.unshieldedKeystore = unshieldedKeystore;
@@ -152,7 +151,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
 
   async start(): Promise<void> {
     this.logger.info('Starting wallet...');
-    await this.wallet.start({ shielded: this._seed, dust: this._dustSeed });
+    await this.wallet.start(this._seeds);
   }
 
   async stop(): Promise<void> {
@@ -235,13 +234,8 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
         dust: (config: any) => DustWallet({ ...dustConfig, ...config }).restore(savedState.dust),
       });
 
-      // NOTE: Do NOT call wallet.start() here — restored wallets already have state.
-      // wallet.start() re-derives keys from seeds which can crash the WASM layer.
-      // The secret keys (zswapSecretKeys, dustSecretKey) are still used for
-      // getCoinPublicKey(), getEncryptionPublicKey(), and balanceTx().
-      logger.info('[Wallet] Restored from saved state (skipping wallet.start — restored wallets are self-contained).');
-
-      return new MidnightWalletProvider(logger, wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore, seed, dustSeed);
+      // Build the provider with seeds for wallet.start() (called by midnight-service)
+      return new MidnightWalletProvider(logger, wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore, { shielded: seed, dust: dustSeed, unshielded: unshieldedSeed });
     }
 
     logger.info('[Wallet] No saved state. Building fresh...');
@@ -271,6 +265,16 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       }
     }
 
+    // For start(), we need all three seeds. savedSeeds has them if mnemonic; otherwise derive from masterSeed
+    let startSeeds: { shielded: Uint8Array; dust: Uint8Array; unshielded: Uint8Array };
+    if (savedSeeds) {
+      startSeeds = savedSeeds;
+    } else {
+      const testkit = await import('@midnight-ntwrk/testkit-js');
+      const ws = testkit.WalletSeeds.fromMasterSeed(seeds.masterSeed);
+      startSeeds = { shielded: ws.shielded, dust: ws.dust, unshielded: ws.unshielded };
+    }
+
     logger.info(`Wallet built from ${secret.kind}; master seed: ${seeds.masterSeed.slice(0, 8)}...`);
 
     const provider = new MidnightWalletProvider(
@@ -279,8 +283,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       shieldedSecretKeys,
       dustSecretKey,
       keystore,
-      seeds.shielded,
-      seeds.dust,
+      startSeeds,
     );
     provider._savedSeeds = savedSeeds;
     return provider;
