@@ -235,10 +235,12 @@ export class MidnightService {
 
     for (let txAttempt = 1; txAttempt <= MAX_TX_RETRIES; txAttempt++) {
       try {
-        const adminSecretKey = crypto.getRandomValues(new Uint8Array(32));
-        this.adminSecretKey = adminSecretKey;
+        // Use existing admin key if set (from persistence); only generate new one on first deploy
+        if (!this.adminSecretKey) {
+          this.adminSecretKey = crypto.getRandomValues(new Uint8Array(32));
+        }
         const adminState: PohPrivateState = {
-          secretKey: adminSecretKey,
+          secretKey: this.adminSecretKey,
           credentialSalt: new Uint8Array(32),
           verifierSigningKey: 0n,
           attestation: null,
