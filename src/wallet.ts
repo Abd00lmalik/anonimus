@@ -231,7 +231,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
         } as any,
         shielded: (config: any) => ShieldedWallet({ ...shieldedConfig, ...config }).restore(savedState.shielded),
         unshielded: (config: any) => UnshieldedWallet({ ...unshieldedConfig, ...config }).restore(savedState.unshielded),
-        dust: (config: any) => DustWallet({ ...dustConfig, ...config }).restore(savedState.dust),
+        dust: (config: any) => DustWallet({ ...dustConfig, ...config }).startWithSeed(dustSeed, DUST_OPTIONS.ledgerParams),
       });
 
       // Build the provider with seeds for wallet.start() (called by midnight-service)
