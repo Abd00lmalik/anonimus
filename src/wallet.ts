@@ -168,9 +168,10 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       logger.info('[Wallet] Attempting restore from saved state...');
 
       const { ShieldedWallet } = await import('@midnight-ntwrk/wallet-sdk-shielded');
-      const { UnshieldedWallet, createKeystore, PublicKey } = await import('@midnight-ntwrk/wallet-sdk-unshielded-wallet');
+      const { UnshieldedWallet, createKeystore } = await import('@midnight-ntwrk/wallet-sdk-unshielded-wallet');
       const { DustWallet } = await import('@midnight-ntwrk/wallet-sdk-dust-wallet');
-      const { WalletFacade, InMemoryTransactionHistoryStorage, WalletEntrySchema, mergeWalletEntries } = await import('@midnight-ntwrk/wallet-sdk-facade');
+      const { WalletFacade, WalletEntrySchema, mergeWalletEntries } = await import('@midnight-ntwrk/wallet-sdk-facade');
+      const { InMemoryTransactionHistoryStorage } = await import('@midnight-ntwrk/wallet-sdk-abstractions');
 
       let seed: Uint8Array;
       let dustSeed: Uint8Array;
