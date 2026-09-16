@@ -323,6 +323,10 @@ export function HomePage() {
             grid-template-columns: 1fr !important;
           }
         }
+        @media (max-width: 640px) {
+          section { padding-left: var(--space-4) !important; padding-right: var(--space-4) !important; }
+          .comparison-table { min-width: 100% !important; overflow-x: auto; }
+        }
       `}</style>
     </div>
   )

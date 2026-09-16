@@ -3,12 +3,14 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Logo } from '../ui/Logo'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useWallet } from '../../contexts/WalletContext'
 
 export function Navigation() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, toggle } = useTheme()
+  const { wallet, disconnect } = useWallet()
 
   const navItems = [
     { label: 'How it works', href: '/how-it-works' },
@@ -28,7 +30,7 @@ export function Navigation() {
         right: 0,
         zIndex: 100,
         backdropFilter: 'blur(16px)',
-        background: 'rgba(7, 8, 10, 0.5)',
+        background: theme === 'dark' ? 'rgba(7, 8, 10, 0.6)' : 'rgba(244, 240, 232, 0.8)',
         borderBottom: '1px solid var(--border)',
       }}
     >
@@ -120,7 +122,7 @@ export function Navigation() {
               padding: '0 20px',
               borderRadius: 'var(--radius-sm)',
               background: 'transparent',
-              border: '1px solid rgba(243, 238, 228, 0.16)',
+              border: '1px solid var(--border)',
               color: 'var(--text-primary)',
               transition: 'all var(--duration-fast) var(--ease-out)',
               letterSpacing: '0.02em',
@@ -131,7 +133,7 @@ export function Navigation() {
               e.currentTarget.style.background = 'var(--bg-elevated)'
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(243, 238, 228, 0.16)'
+              e.currentTarget.style.borderColor = 'var(--border)'
               e.currentTarget.style.background = 'transparent'
             }}
           >
@@ -168,6 +170,44 @@ export function Navigation() {
             )}
           </button>
 
+          {wallet.connected && (
+            <button
+              onClick={disconnect}
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.6875rem',
+                height: 44,
+                padding: '0 14px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                color: 'var(--text-muted)',
+                transition: 'all var(--duration-fast) var(--ease-out)',
+                letterSpacing: '0.02em',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-2)',
+                maxWidth: 160,
+                overflow: 'hidden',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'var(--error)'
+                e.currentTarget.style.color = 'var(--error)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border)'
+                e.currentTarget.style.color = 'var(--text-muted)'
+              }}
+              title={`Connected: ${wallet.address}`}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <circle cx="5" cy="5" r="4" fill="var(--success)" />
+              </svg>
+              Disconnect
+            </button>
+          )}
+
           <button
             className="mobile-menu-btn"
             style={{
@@ -193,10 +233,57 @@ export function Navigation() {
         </div>
         </div>
 
+        {mobileOpen && (
+          <div
+            className="mobile-nav-drawer"
+            style={{
+              display: 'none',
+              padding: 'var(--space-4) var(--space-8)',
+              paddingBottom: 'var(--space-6)',
+              background: theme === 'dark' ? 'rgba(7, 8, 10, 0.95)' : 'rgba(244, 240, 232, 0.95)',
+              borderTop: '1px solid var(--border)',
+            }}
+          >
+            {navItems.map(item => (
+              <Link
+                key={item.href}
+                to={item.href}
+                onClick={() => setMobileOpen(false)}
+                style={{
+                  display: 'block',
+                  fontFamily: 'var(--font-ui)',
+                  fontSize: '0.9375rem',
+                  color: location.pathname === item.href ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  padding: 'var(--space-3) 0',
+                  borderBottom: '1px solid var(--border)',
+                }}
+              >
+                {item.label}
+              </Link>
+            ))}
+            <button
+              onClick={() => { navigate('/campaigns/create'); setMobileOpen(false) }}
+              style={{
+                display: 'block',
+                fontFamily: 'var(--font-ui)',
+                fontSize: '0.9375rem',
+                color: 'var(--text-secondary)',
+                padding: 'var(--space-3) 0',
+                borderBottom: '1px solid var(--border)',
+                textAlign: 'left',
+                width: '100%',
+              }}
+            >
+              Create Campaign
+            </button>
+          </div>
+        )}
+
         <style>{`
         @media (max-width: 768px) {
           .nav-links { display: none !important; }
           .mobile-menu-btn { display: flex !important; }
+          .mobile-nav-drawer { display: block !important; }
         }
       `}</style>
     </motion.nav>

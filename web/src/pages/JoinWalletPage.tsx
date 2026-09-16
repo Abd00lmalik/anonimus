@@ -5,30 +5,37 @@ import { fetchCampaign, fetchNetworkInfo } from '../lib/api'
 import { useVerification } from '../contexts/VerificationContext'
 import type { Campaign } from '../types'
 
+function getWalletIcon(id: string): React.ReactNode {
+  if (typeof window !== 'undefined' && window.midnight) {
+    const wallet = id === 'lace'
+      ? (window.midnight.mnLace ?? window.midnight.lace)
+      : (window.midnight['1am'])
+    const iconUrl = (wallet as any)?.icon
+    if (iconUrl) {
+      return <img src={iconUrl} alt={id} width={32} height={32} style={{ borderRadius: 8, objectFit: 'cover' }} />
+    }
+  }
+  if (id === 'lace') {
+    return (
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="8" fill="#2A2438" />
+        <circle cx="16" cy="16" r="11" stroke="#C6A35A" strokeWidth="1.5" />
+        <circle cx="16" cy="16" r="5" fill="#C6A35A" opacity="0.15" />
+        <circle cx="16" cy="16" r="2" fill="#C6A35A" />
+      </svg>
+    )
+  }
+  return (
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="8" fill="#1A2332" />
+      <text x="16" y="20" textAnchor="middle" fill="#C6A35A" fontFamily="monospace" fontSize="13" fontWeight="700">1A</text>
+    </svg>
+  )
+}
+
 const WALLETS = [
-  {
-    id: 'lace',
-    name: 'Lace',
-    description: 'Lightweight wallet for Midnight',
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-        <rect width="32" height="32" rx="8" fill="#1a1a2e" />
-        <circle cx="16" cy="16" r="10" stroke="#C6A35A" strokeWidth="1.5" />
-        <path d="M12 16L16 12L20 16L16 20Z" stroke="#C6A35A" strokeWidth="1" fill="none" />
-      </svg>
-    ),
-  },
-  {
-    id: '1am',
-    name: '1AM Wallet',
-    description: 'Privacy-first Midnight wallet',
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-        <rect width="32" height="32" rx="8" fill="#1a1a2e" />
-        <text x="16" y="20" textAnchor="middle" fill="#C6A35A" fontFamily="var(--font-mono)" fontSize="12" fontWeight="700">1A</text>
-      </svg>
-    ),
-  },
+  { id: 'lace', name: 'Lace', description: 'Lightweight wallet for Midnight' },
+  { id: '1am', name: '1AM Wallet', description: 'Privacy-first Midnight wallet' },
 ]
 
 export function JoinWalletPage() {
@@ -157,7 +164,7 @@ export function JoinWalletPage() {
                 transition: 'all var(--duration-fast) var(--ease-out)',
               }}
             >
-              {wallet.icon}
+              {getWalletIcon(wallet.id)}
               <div>
                 <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text-primary)' }}>
                   {wallet.name}

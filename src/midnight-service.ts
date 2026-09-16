@@ -345,12 +345,15 @@ export class MidnightService {
       expiresAt,
     };
     await this._setPrivateState('poh-user-state', userState);
+    const scopeBytes2 = new Uint8Array(32);
+    const encoded2 = new TextEncoder().encode(campaignId);
+    scopeBytes2.set(encoded2.slice(0, 32));
     const verifyResult = await submitCallTx<Contract, 'verifyPersonhood'>(this.providers, {
       compiledContract: CompiledPohCoreContract,
       contractAddress: this.contractAddress,
       privateStateId: 'poh-user-state',
       circuitId: 'verifyPersonhood',
-      args: [new TextEncoder().encode(campaignId)],
+      args: [scopeBytes2],
     } as any);
 
     // Compute nullifier off-chain (matches circuit's persistentHash)
@@ -435,12 +438,16 @@ export class MidnightService {
     };
     await this._setPrivateState('poh-user-state', userState);
 
+    const scopeBytes = new Uint8Array(32);
+    const encoded = new TextEncoder().encode(campaignId);
+    scopeBytes.set(encoded.slice(0, 32));
+
     const verificationResult = await createUnprovenCallTx<Contract, 'verifyPersonhood'>(this.providers, {
       compiledContract: CompiledPohCoreContract,
       contractAddress: this.contractAddress,
       privateStateId: 'poh-user-state',
       circuitId: 'verifyPersonhood',
-      args: [new TextEncoder().encode(campaignId)],
+      args: [scopeBytes],
     } as any);
 
     // Compute nullifier off-chain
