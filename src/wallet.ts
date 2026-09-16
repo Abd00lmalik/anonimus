@@ -196,16 +196,19 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
 
       const shieldedConfig = {
         indexerClientConnection: { indexerHttpUrl: env.indexer },
+        provingServerUrl: env.proofServer,
         networkId: env.networkId,
         txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
       };
       const unshieldedConfig = {
         indexerClientConnection: { indexerWsUrl: env.indexerWS, indexerHttpUrl: env.indexer },
+        provingServerUrl: env.proofServer,
         networkId: env.networkId,
         txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
       };
       const dustConfig = {
         indexerClientConnection: { indexerHttpUrl: env.indexer },
+        provingServerUrl: env.proofServer,
         networkId: env.networkId,
         txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
       };
@@ -215,6 +218,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
           networkId: env.networkId,
           nodeClientConnection: { nodeRpcUrl: env.node },
           indexerClientConnection: { indexerHttpUrl: env.indexer },
+          provingServerUrl: env.proofServer,
           txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
         } as any,
         shielded: (config: any) => ShieldedWallet({ ...shieldedConfig, ...config }).restore(savedState.shielded),
