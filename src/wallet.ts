@@ -187,19 +187,28 @@ export async function syncWallet(
         if (allComplete) return true;
 
         const shDone = isProgressStrictlyComplete(sh);
+        const unDone = isProgressStrictlyComplete(un);
         const dustDone = isProgressStrictlyComplete(dust);
-        if (shDone && dustDone) {
+
+        if (shDone && unDone) {
+          if (dustDone) return true;
+
           const stallMs = Date.now() - lastProgressTime;
           const STALL_THRESHOLD_MS = 5 * 60 * 1000;
           if (stallMs > STALL_THRESHOLD_MS) {
             logger.warn(`Sync stall detected (${Math.round(stallMs / 1000)}s no dust progress). Proceeding with current state.`);
             return true;
           }
+
+          if (emissionCount > 500) {
+            logger.warn(`Dust sync slow (${Math.round((dust?.appliedIndex ?? 0n) as number)}/${dust?.length ?? '?'} after ${emissionCount} emissions). Proceeding — dust will continue in background.`);
+            return true;
+          }
         }
 
         return false;
       }),
-      Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions`)),
+      Rx.tap(() => logger.info(`Wallet sync complete after ${emissionCount} emissions (shielded + unshielded done; dust may continue in background)`)),
     ),
   );
 }

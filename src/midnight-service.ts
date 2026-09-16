@@ -180,13 +180,11 @@ export class MidnightService {
       }
     }
 
-    // Register test verifier (one-time)
+    // Create and register test verifier (Set.insert is idempotent — safe to re-register with new VK)
     this.verifier = createTestVerifier();
     setVerifier(this.verifier);
-    if (!existingAddress) {
-      await this._registerVerifier();
-      this.logger.info('[MidnightService] Verifier registered.');
-    }
+    await this._registerVerifier();
+    this.logger.info('[MidnightService] Verifier registered.');
 
     this.initialized = true;
   }
