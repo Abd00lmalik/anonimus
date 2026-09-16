@@ -64,12 +64,14 @@ export function JoinWalletPage() {
   const [error, setError] = useState<string | null>(null)
   const [faucetUrl, setFaucetUrl] = useState<string | null>(null)
 
-  // Force disconnect on mount — prevents wallet extension auto-connect
+  // Block auto-connect from wallet extension on this page
+  // If wallet connects without user clicking a wallet button, force disconnect
+  const [userInitiated, setUserInitiated] = useState(false)
   useEffect(() => {
-    if (wallet.connected) {
+    if (wallet.connected && !userInitiated) {
       disconnect()
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wallet.connected, userInitiated]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!id) return
@@ -112,12 +114,14 @@ export function JoinWalletPage() {
 
   const handleConnect = async (walletId: string) => {
     setSelectedWallet(walletId)
+    setUserInitiated(true)
     setError(null)
     try {
       await startWalletConnect(walletId)
       navigate(`/campaigns/${campaign.id}/disclosure`)
     } catch {
       setError('Connection failed. Please try again.')
+      setUserInitiated(false)
     }
   }
 
