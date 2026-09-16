@@ -136,7 +136,7 @@ export class MidnightService {
       secret,
     );
     await this.wallet.start();
-    await syncWallet(this.logger as any, this.wallet.wallet);
+    await syncWallet(this.logger as any, this.wallet.wallet, 600_000, this.wallet._savedSeeds);
     this.logger.info('[MidnightService] Wallet synced.');
 
     // Build providers (proof server, indexer, private state, etc.)

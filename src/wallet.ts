@@ -41,7 +41,7 @@ function getStateFilePath(kind: string): string {
   return path.join(STATE_DIR, `${kind}.state`);
 }
 
-export async function saveWalletState(logger: Logger, wallet: WalletFacade): Promise<void> {
+export async function saveWalletState(logger: Logger, wallet: WalletFacade, seeds?: { shielded: Uint8Array; dust: Uint8Array; unshielded: Uint8Array }): Promise<void> {
   try {
     if (!fs.existsSync(STATE_DIR)) {
       fs.mkdirSync(STATE_DIR, { recursive: true });
@@ -54,13 +54,20 @@ export async function saveWalletState(logger: Logger, wallet: WalletFacade): Pro
     fs.writeFileSync(getStateFilePath('shielded'), shieldedState, 'utf-8');
     fs.writeFileSync(getStateFilePath('unshielded'), unshieldedState, 'utf-8');
     fs.writeFileSync(getStateFilePath('dust'), dustState, 'utf-8');
+    if (seeds) {
+      fs.writeFileSync(getStateFilePath('seeds'), JSON.stringify({
+        shielded: Buffer.from(seeds.shielded).toString('hex'),
+        dust: Buffer.from(seeds.dust).toString('hex'),
+        unshielded: Buffer.from(seeds.unshielded).toString('hex'),
+      }), 'utf-8');
+    }
     logger.info('[WalletState] Saved wallet state to disk.');
   } catch (err: unknown) {
     logger.warn(`[WalletState] Failed to save wallet state: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
-function loadSavedState(logger: Logger): { shielded: string; unshielded: string; dust: string } | undefined {
+function loadSavedState(logger: Logger): { shielded: string; unshielded: string; dust: string; seeds?: { shielded: string; dust: string; unshielded: string } } | undefined {
   try {
     const files = ['shielded', 'unshielded', 'dust'];
     const missing = files.filter(f => !fs.existsSync(getStateFilePath(f)));
@@ -73,7 +80,13 @@ function loadSavedState(logger: Logger): { shielded: string; unshielded: string;
       unshielded: fs.readFileSync(getStateFilePath('unshielded'), 'utf-8'),
       dust: fs.readFileSync(getStateFilePath('dust'), 'utf-8'),
     };
-    logger.info('[WalletState] Found saved wallet state.');
+    const seedsPath = getStateFilePath('seeds');
+    if (fs.existsSync(seedsPath)) {
+      (state as any).seeds = JSON.parse(fs.readFileSync(seedsPath, 'utf-8'));
+      logger.info('[WalletState] Found saved wallet state with seeds.');
+    } else {
+      logger.info('[WalletState] Found saved wallet state (no seeds file).');
+    }
     return state;
   } catch {
     return undefined;
@@ -82,7 +95,7 @@ function loadSavedState(logger: Logger): { shielded: string; unshielded: string;
 
 function clearSavedState(logger: Logger): void {
   try {
-    for (const f of ['shielded', 'unshielded', 'dust']) {
+    for (const f of ['shielded', 'unshielded', 'dust', 'seeds']) {
       const fp = getStateFilePath(f);
       if (fs.existsSync(fp)) fs.rmSync(fp);
     }
@@ -95,6 +108,7 @@ function clearSavedState(logger: Logger): void {
 export class MidnightWalletProvider implements MidnightProvider, WalletProvider {
   readonly wallet: WalletFacade;
   readonly unshieldedKeystore: UnshieldedKeystore;
+  _savedSeeds?: { shielded: Uint8Array; dust: Uint8Array; unshielded: Uint8Array };
 
   private constructor(
     private readonly logger: Logger,
@@ -158,15 +172,22 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       const { DustWallet } = await import('@midnight-ntwrk/wallet-sdk-dust-wallet');
       const { WalletFacade, InMemoryTransactionHistoryStorage, WalletEntrySchema, mergeWalletEntries } = await import('@midnight-ntwrk/wallet-sdk-facade');
 
-      const seed = secret.kind === 'mnemonic'
-        ? (await import('@midnight-ntwrk/testkit-js')).getShieldedSeed(secret.value)
-        : Uint8Array.from(Buffer.from(secret.value, 'hex'));
-      const dustSeed = secret.kind === 'mnemonic'
-        ? (await import('@midnight-ntwrk/testkit-js')).getDustSeed(secret.value)
-        : Uint8Array.from(Buffer.from(secret.value, 'hex'));
-      const unshieldedSeed = secret.kind === 'mnemonic'
-        ? (await import('@midnight-ntwrk/testkit-js')).getUnshieldedSeed(secret.value)
-        : Uint8Array.from(Buffer.from(secret.value, 'hex'));
+      let seed: Uint8Array;
+      let dustSeed: Uint8Array;
+      let unshieldedSeed: Uint8Array;
+
+      if (savedState.seeds) {
+        seed = Uint8Array.from(Buffer.from(savedState.seeds.shielded, 'hex'));
+        dustSeed = Uint8Array.from(Buffer.from(savedState.seeds.dust, 'hex'));
+        unshieldedSeed = Uint8Array.from(Buffer.from(savedState.seeds.unshielded, 'hex'));
+        logger.info('[Wallet] Using saved seeds for restore.');
+      } else {
+        const testkit = await import('@midnight-ntwrk/testkit-js');
+        seed = testkit.getShieldedSeed(secret.value);
+        dustSeed = testkit.getDustSeed(secret.value);
+        unshieldedSeed = testkit.getUnshieldedSeed(secret.value);
+        logger.info('[Wallet] Derived seeds from mnemonic for restore.');
+      }
 
       const shieldedSecretKeys = ZswapSecretKeys.fromSeed(seed);
       const dustSecretKey = DustSecretKey.fromSeed(dustSeed);
@@ -222,15 +243,27 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     const shieldedSecretKeys = ZswapSecretKeys.fromSeed(seeds.shielded);
     const dustSecretKey = DustSecretKey.fromSeed(seeds.dust);
 
+    let unshieldedSeedForSave: Uint8Array | undefined;
+    if (secret.kind === 'mnemonic') {
+      const testkit = await import('@midnight-ntwrk/testkit-js');
+      unshieldedSeedForSave = testkit.getUnshieldedSeed(secret.value);
+    }
+
     logger.info(`Wallet built from ${secret.kind}; master seed: ${seeds.masterSeed.slice(0, 8)}...`);
 
-    return new MidnightWalletProvider(
+    const provider = new MidnightWalletProvider(
       logger,
       wallet,
       shieldedSecretKeys,
       dustSecretKey,
       keystore,
     );
+    provider._savedSeeds = {
+      shielded: seeds.shielded,
+      dust: seeds.dust,
+      unshielded: unshieldedSeedForSave ?? new Uint8Array(0),
+    };
+    return provider;
   }
 }
 
@@ -271,6 +304,7 @@ export async function syncWallet(
   logger: Logger,
   wallet: WalletFacade,
   timeout = 600_000,
+  seeds?: { shielded: Uint8Array; dust: Uint8Array; unshielded: Uint8Array },
 ): Promise<FacadeState> {
   logger.info('Syncing wallet (waiting for all sub-wallets to catch up)...');
   let emissionCount = 0;
@@ -334,6 +368,6 @@ export async function syncWallet(
     ),
   );
 
-  await saveWalletState(logger, wallet);
+  await saveWalletState(logger, wallet, seeds);
   return result;
 }
